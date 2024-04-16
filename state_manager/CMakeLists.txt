@@ -18,6 +18,7 @@ find_package( rclcpp REQUIRED )
 find_package( std_msgs REQUIRED )
 find_package( geometry_msgs REQUIRED )
 find_package( freyja_msgs REQUIRED )
+find_package( freyja_utils REQUIRED )
 find_package( sensor_msgs REQUIRED )
 find_package( nav_msgs REQUIRED ) 
 find_package( std_srvs REQUIRED ) 
@@ -40,7 +41,8 @@ if(DEFINED ENV{ROS_DISTRO})
     endif()
 endif()
 
-add_executable(state_manager_node src/state_manager.cpp src/state_estimator.cpp)
+# add_executable(state_manager_node src/state_manager.cpp src/state_estimator.cpp)
+add_executable(state_manager_node src/state_manager.cpp)
 target_include_directories( state_manager_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
@@ -55,6 +57,7 @@ ament_target_dependencies( state_manager_node
   tf2
   tf2_ros
   tf2_geometry_msgs
+  freyja_utils
 )
 
 install(TARGETS

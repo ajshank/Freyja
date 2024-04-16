@@ -1,5 +1,5 @@
 
-#include "state_manager.hpp"
+#include "state_manager.h"
 #include "callback_implementations.cpp"
 
 #define rclcpp_NODE_NAME "state_manager"
@@ -7,8 +7,6 @@
 StateManager::StateManager() : Node( rclcpp_NODE_NAME )
 {
   state_vector_.resize( STATE_VECTOR_LEN );
-  pose_filter_ = nullptr;
-  rate_filter_ = nullptr;
   
   /* find out what the source of state information is:
       > "vicon" for a motion capture system with ENU frame
@@ -22,7 +20,6 @@ StateManager::StateManager() : Node( rclcpp_NODE_NAME )
   declare_parameter<int>( "filter_length", 21 );
   declare_parameter<std::vector<double>> ("kf_params", std::vector<double>({0.1, 0.1, 0.2, 0.5}));
 
-
   get_parameter( "state_source", state_source_ );
   get_parameter( "filter_type", filter_type_ );
   get_parameter( "filter_length", filter_len_ );
@@ -31,9 +28,12 @@ StateManager::StateManager() : Node( rclcpp_NODE_NAME )
     initMocapManager();
   else if( state_source_ == "tf-mocap" )
     initTfManager();
+  // else if( state_source_ == "asctec" )
+  //   initAsctecManager();
   else if (state_source_ == "apm" )
      initPixhawkManager();
-
+  // else if( state_source_ == "onboard_camera" )
+  //   initCameraManager();
   use_kf_ = false;
 
   /* Announce state publisher */
@@ -51,46 +51,42 @@ StateManager::StateManager() : Node( rclcpp_NODE_NAME )
     else if( filter_len_ == 5 )
       fc = { 0.1534,	0.2214,	0.2504,	0.2214,	0.1534 };
 
-    pose_filter_ = std::make_shared<freyja_utils::ConvFilters>( "gauss", filter_len_, fc );
-    rate_filter_ = std::make_shared<freyja_utils::ConvFilters>( "gauss", filter_len_, fc );
+    pose_filter_ = FreyjaFilters( filter_len_, "gauss", "~", fc );
+    rate_filter_ = FreyjaFilters( filter_len_, "gauss", "~", fc );
     RCLCPP_INFO( get_logger(), "Gaussian filter init!" );
   }
   else if( filter_type_ == "lwma" )
   {
     /* The init function automatically fills in the coeffs for lwma */
-    pose_filter_ = std::make_shared<freyja_utils::ConvFilters>( "lwma-cubic", filter_len_ );
-    rate_filter_ = std::make_shared<freyja_utils::ConvFilters>( "lwma-cubic", filter_len_ );
+    //filter_len_ = 20;
+    pose_filter_ = FreyjaFilters( filter_len_, "lwma", "cubic" );
+    rate_filter_ = FreyjaFilters( filter_len_, "lwma", "cubic" );
     RCLCPP_INFO( get_logger(), "LWMA filter init!" );
   }
   else if( filter_type_ == "median" )
   {
-    pose_filter_ = std::make_shared<freyja_utils::MedianFilter>();
-    rate_filter_ = std::make_shared<freyja_utils::MedianFilter>();
-    filter_len_ = pose_filter_->getFilterLen();
+    pose_filter_ = FreyjaFilters( -1, "median", "~" );
+    rate_filter_ = FreyjaFilters( -1, "median", "~" );
+    filter_len_ = pose_filter_.getCurrentFilterLen();
   }
   else if( filter_type_ == "kalman" )
   {
     std::vector<double> kparams;
     get_parameter("kf_params", kparams);
-    pose_filter_ = std::make_shared<freyja_utils::KalmanFilter>(200, kparams);
+    estimator_.init( 200, kparams[0], kparams[1], kparams[2], kparams[3] );
     use_kf_ = true;
-    RCLCPP_INFO( get_logger(), "Kalman filter init!" );
-    filter_len_ = 0;
   }
   else
     RCLCPP_WARN( get_logger(), "No filter initialised by Freyja." );
   
   // init history containers
-  if( !use_kf_ )
-  {
-    prev_pn_.resize( filter_len_ );
-    prev_pe_.resize( filter_len_ );
-    prev_pd_.resize( filter_len_ );
+  prev_pn_.resize( filter_len_ );
+  prev_pe_.resize( filter_len_ );
+  prev_pd_.resize( filter_len_ );
   
-    prev_vn_.resize( filter_len_ );
-    prev_ve_.resize( filter_len_ );
-    prev_vd_.resize( filter_len_ );
-  }
+  prev_vn_.resize( filter_len_ );
+  prev_ve_.resize( filter_len_ );
+  prev_vd_.resize( filter_len_ );
   lastUpdateTime_ = now();
   have_location_fix_ = false;
 }
@@ -144,9 +140,8 @@ void StateManager::initTfManager()
 
 void StateManager::initPixhawkManager()
 {
-  declare_parameter<bool>( "use_rtkbaseframe", false );
+  declare_parameter<bool> ( "use_rtkbaseframe", false );
   get_parameter( "use_rtkbaseframe", use_rtkbaseframe_ );
-
   have_arming_origin_ = false;
   // mavros_gpsraw_sub_ = create_subscription( "/mavros/global_position/global", 1,
   //                               std::bind(&StateManager::mavrosGpsRawCallback, this, _1 );

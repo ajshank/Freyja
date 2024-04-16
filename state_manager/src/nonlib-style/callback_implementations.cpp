@@ -7,7 +7,7 @@ void StateManager::mocapCallback( const TFStamped::ConstSharedPtr msg )
   
   static CurrentState state_msg;
   double time_since = (now() - lastUpdateTime_).seconds();
-  static Eigen::VectorXd best_estimate_;
+  static Eigen::Matrix<double, 9, 1> best_estimate_;
 
   if( use_kf_ )
   {
@@ -17,8 +17,8 @@ void StateManager::mocapCallback( const TFStamped::ConstSharedPtr msg )
                 msg->transform.translation.x,
                 -msg->transform.translation.z;
 
-    pose_filter_->setMeasurementInput( meas_z_ );
-    pose_filter_->getStateEstimate( best_estimate_, 9 );
+    estimator_.setMeasurementInput( meas_z_ );
+    estimator_.getStateEstimate( best_estimate_ );
     for( int idx=0; idx<6; idx++ )
       state_vector_[idx] = best_estimate_.coeff(idx);
   }
@@ -36,7 +36,7 @@ void StateManager::mocapCallback( const TFStamped::ConstSharedPtr msg )
     prev_pd_.erase( prev_pd_.begin() );
     prev_pd_.push_back( z );
 
-    pose_filter_->filterObservations( prev_pn_, prev_pe_, prev_pd_, x, y, z );
+    pose_filter_.filterObservations( prev_pn_, prev_pe_, prev_pd_, x, y, z );
 
     /* positions */
     state_vector_[0] = x;
@@ -55,7 +55,7 @@ void StateManager::mocapCallback( const TFStamped::ConstSharedPtr msg )
     prev_vd_.erase( prev_vd_.begin() );
     prev_vd_.push_back( vz );
 
-    rate_filter_->filterObservations( prev_vn_, prev_ve_, prev_vd_, vx, vy, vz );
+    rate_filter_.filterObservations( prev_vn_, prev_ve_, prev_vd_, vx, vy, vz );
 
     state_vector_[3] = vx;
     state_vector_[4] = vy;
@@ -228,13 +228,12 @@ void StateManager::mavrosGpsOdomCallback( const nav_msgs::msg::Odometry::ConstSh
         /mavros/local_position/local  --> zeros at arming, has IMU frame quirk.
   */
   
-  //static double pn, pe, pd, vn, ve, vd;
-  static Eigen::Matrix<double, 6, 1> pos_vel_;
+  static double pn, pe, pd, vn, ve, vd;
   
   // update containers anyway (needed for capturing arming location)
-  gps_odom_pose_ << msg -> pose.pose.position.y,
-                    msg -> pose.pose.position.x,
-                   -( msg -> pose.pose.position.z );
+  gps_odom_pn_ = msg -> pose.pose.position.y;
+  gps_odom_pe_ = msg -> pose.pose.position.x;
+  gps_odom_pd_ = -( msg -> pose.pose.position.z );
   
   if( !have_arming_origin_ )
   {
@@ -243,15 +242,22 @@ void StateManager::mavrosGpsOdomCallback( const nav_msgs::msg::Odometry::ConstSh
   }
   
   // armed at this point
-  pos_vel_.head<3>() = gps_odom_pose_ + map_rtk_pose_ - arming_gps_pose_;
-  pos_vel_.tail<3>() << msg -> twist.twist.linear.y,
-                        msg -> twist.twist.linear.x;
-                        ( msg -> twist.twist.linear.z );  // @TODO unclear what frame this is in from mavros
+  pn = gps_odom_pn_ + map_rtk_pn_ - arming_gps_pn_;
+  pe = gps_odom_pe_ + map_rtk_pe_ - arming_gps_pe_;
+  pd = gps_odom_pd_ + map_rtk_pd_ - arming_gps_pd_;
+  
+  // @TODO: what frame is this??
+  vn = msg -> twist.twist.linear.y;
+  ve = msg -> twist.twist.linear.x;
+  vd = ( msg -> twist.twist.linear.z );
   
   static CurrentState state_msg;
-  for( unsigned int idx=0; idx<6; idx++ )
-    state_msg.state_vector[idx] = pos_vel_[idx];
-
+  state_msg.state_vector[0] = pn;
+  state_msg.state_vector[1] = pe;
+  state_msg.state_vector[2] = pd;
+  state_msg.state_vector[3] = vn;
+  state_msg.state_vector[4] = ve;
+  state_msg.state_vector[5] = vd;
   state_msg.state_vector[8] = DEG2RAD( compass_yaw_ );
   
   state_msg.header.stamp = now();
@@ -261,7 +267,9 @@ void StateManager::mavrosGpsOdomCallback( const nav_msgs::msg::Odometry::ConstSh
 
 void StateManager::mavrosRtkBaselineCallback( const geometry_msgs::msg::Vector3::ConstSharedPtr msg )
 {
-  rtk_baseoffsets_ << msg -> x, msg -> y, msg -> z;
+  rtk_baseoffset_pn_ = msg -> x;
+  rtk_baseoffset_pe_ = msg -> y;
+  rtk_baseoffset_pd_ = msg -> z;
 }
 
 void StateManager::maplockArmingHandler( const BoolServ::Request::SharedPtr rq, 
