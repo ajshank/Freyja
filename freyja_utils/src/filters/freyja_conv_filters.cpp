@@ -1,27 +1,7 @@
-namespace FreyjaUtils
-{
-  class ConvFilters : public Filter
-  {
-    std::vector<double> filter_coeffs_;
-    double weight_scaler_;
+//#include <freyja_utils/filters.hpp>
 
-    public:
-      using Filter::Filter;
-      ConvFilters() { }
-      ConvFilters( const std::string&, const unsigned int&, const std::vector<double> );
-      void init();
-      void initGenericFilter( const std::string&, const int&, const std::vector<double>&, double );
-      
-      void filterObservations( const Eigen::VectorXd &obs, double &retVal );
-      void filterObservations( const Eigen::MatrixXd &obs, Eigen::VectorXd &retVal );
-      void filterObservations( const std::vector<double> &obs, double &retVal );
-      void filterObservations(  const std::vector<double> &obs1, 
-                                const std::vector<double> &obs2, 
-                                const std::vector<double> &obs3, 
-                                double &retVal1,
-                                double &retVal2,
-                                double &retVal3 );
-  };
+namespace freyja_utils
+{
 
   void ConvFilters::init()
   {
@@ -39,6 +19,11 @@ namespace FreyjaUtils
                       _weight :
                       std::accumulate( fc.begin(), fc.end(), 0.0 );
     init();
+  }
+  
+  ConvFilters::ConvFilters( const std::string &f_name, const unsigned int& len )
+  {
+    ConvFilters( f_name, len, std::vector<double>() );
   }
 
   ConvFilters::ConvFilters( const std::string &f_name, const unsigned int& len, 
