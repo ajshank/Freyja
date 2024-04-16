@@ -35,8 +35,8 @@ launch:
       - { name:   "tf_myframe",         value:  "$(var tf_myframe)" }
       - { name:   "tf_baseframe",       value:  "$(var tf_baseframe)" }
       - { name:   "filter_type",        value:  "kalman" }
-      - { name:   "filter_len",         value:  5 }
-      - { name:   "kf_params",          value:  [0.0594, 0.0051, 0.0147, 6.3836] }
+      - { name:   "filter_len",         value:  5 }                     # exposed; has no effect if 'kalman'
+      - { name:   "kf_params",          value:  [0.001, 5.0] }
 
   - node:
       pkg:        "lqg_control"
