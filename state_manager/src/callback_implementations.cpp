@@ -78,10 +78,12 @@ void StateManager::mocapCallback( const TFStamped::ConstSharedPtr msg )
 
   
   /* rpy rates (no filter yet, use with caution!) */
-  state_vector_[9] = best_estimate_.coeff(6);    //  ( roll - last_roll_ )/time_since;
-  state_vector_[10] = best_estimate_.coeff(7);   //  ( pitch - last_pitch_ )/time_since;
-  state_vector_[11] = best_estimate_.coeff(8);   //  std::fmod( (yaw - last_yaw_)/time_since, 2*F_PI );
-  
+  if( use_kf_ )
+  {
+    state_vector_[9] = best_estimate_.coeff(6);    //  ( roll - last_roll_ )/time_since;
+    state_vector_[10] = best_estimate_.coeff(7);   //  ( pitch - last_pitch_ )/time_since;
+    state_vector_[11] = best_estimate_.coeff(8);   //  std::fmod( (yaw - last_yaw_)/time_since, 2*F_PI );
+  }
   /* age of this data */
   state_vector_[12] = time_since;
   
