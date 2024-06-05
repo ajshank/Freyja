@@ -249,7 +249,7 @@ void StateManager::mavrosGpsOdomCallback( const nav_msgs::msg::Odometry::ConstSh
   // armed at this point
   pos_vel_.head<3>() = gps_odom_pose_ + map_rtk_pose_ - arming_gps_pose_;
   pos_vel_.tail<3>() << msg -> twist.twist.linear.y,
-                        msg -> twist.twist.linear.x;
+                        msg -> twist.twist.linear.x,
                         ( msg -> twist.twist.linear.z );  // @TODO unclear what frame this is in from mavros
   
   for( unsigned int idx=0; idx<6; idx++ )
