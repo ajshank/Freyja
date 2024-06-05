@@ -101,7 +101,7 @@ void StateManager::mocapCallback( const TFStamped::ConstSharedPtr msg )
   for( uint8_t idx = 0; idx < STATE_VECTOR_LEN; idx++ )
     state_msg.state_vector[idx] = state_vector_[idx];
   
-  
+  state_msg.state_valid = 1;
   /* Copy over and publish right away */
   state_msg.header.stamp = now();
   state_pub_ -> publish( state_msg );
@@ -240,9 +240,11 @@ void StateManager::mavrosGpsOdomCallback( const nav_msgs::msg::Odometry::ConstSh
   
   if( !have_arming_origin_ )
   {
-    RCLCPP_INFO_THROTTLE( get_logger(), *(get_clock()), 2500, "Waiting for arming .." );
-    return;
+    RCLCPP_INFO_THROTTLE( get_logger(), *(get_clock()), 2500, "Waiting for arming .. state may have discont." );
+    state_msg.state_valid = 0;
   }
+  else
+    state_msg.state_valid = 1;
   
   // armed at this point
   pos_vel_.head<3>() = gps_odom_pose_ + map_rtk_pose_ - arming_gps_pose_;

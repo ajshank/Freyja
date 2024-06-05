@@ -241,6 +241,8 @@ MavrosHandler::MavrosHandler() :  Node( ROS_NODE_NAME )
                             baseline_msg_.y = msg->baseline_b_mm/1000.0;
                             baseline_msg_.z = msg->baseline_c_mm/1000.0;
                             baseline_pub_ -> publish( baseline_msg_ );
+                            fstatus_.rtk_fix_ok = (msg->rtk_health == 6);
+                            fstatus_.rtk_carrsol = (msg->rtk_health > 4)*((msg->rtk_health > 5)? 2 : 1);
                           } );
   
   // now we can create fixed-rate timers and other processing code

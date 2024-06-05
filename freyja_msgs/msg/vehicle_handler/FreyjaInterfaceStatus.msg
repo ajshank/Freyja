@@ -13,6 +13,8 @@ std_msgs/Header  header
 bool    connected       # comms to vehicle
 bool    armed           # motors on
 bool    computer_ctrl   # mode == computer
+bool    rtk_fix_ok       # carr.soln == Fix
+uint8   rtk_carrsol     # carr.soln {0:no corr, 1:float, 2:fix}
 # extra rc channels (as boolean (>1500))
 bool    aux1
 bool    aux2
