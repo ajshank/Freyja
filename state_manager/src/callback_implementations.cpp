@@ -230,7 +230,7 @@ void StateManager::mavrosGpsOdomCallback( const nav_msgs::msg::Odometry::ConstSh
         /mavros/local_position/local  --> zeros at arming, has IMU frame quirk.
   */
   
-  //static double pn, pe, pd, vn, ve, vd;
+  static CurrentState state_msg;
   static Eigen::Matrix<double, 6, 1> pos_vel_;
   
   // update containers anyway (needed for capturing arming location)
@@ -252,7 +252,6 @@ void StateManager::mavrosGpsOdomCallback( const nav_msgs::msg::Odometry::ConstSh
                         msg -> twist.twist.linear.x;
                         ( msg -> twist.twist.linear.z );  // @TODO unclear what frame this is in from mavros
   
-  static CurrentState state_msg;
   for( unsigned int idx=0; idx<6; idx++ )
     state_msg.state_vector[idx] = pos_vel_[idx];
 
