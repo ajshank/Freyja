@@ -35,8 +35,9 @@
 
 #include <freyja_utils/filters/filters.hpp>
 
-typedef geometry_msgs::msg::TransformStamped TFStamped;
-typedef geometry_msgs::msg::TwistStamped TwStamped;
+typedef geometry_msgs::msg::TransformStamped  TFStamped;
+typedef geometry_msgs::msg::TwistStamped      TwStamped;
+typedef geometry_msgs::msg::Vector3           GeomVec3;
 typedef nav_msgs::msg::Odometry CameraOdom;
 typedef std_srvs::srv::SetBool BoolServ;
 
@@ -98,13 +99,15 @@ class StateManager: public rclcpp::Node
   double home_lat_, home_lon_;
   bool have_location_fix_;
   double compass_yaw_;
-  
+  Eigen::Vector3d gps_odom_pose_;
+  Eigen::Vector3d arming_gps_pose_;
   bool have_arming_origin_;
+  
+  /* containers for RTK/map handling */
+  std::string rtkbase_offset_type_;
   bool use_rtkbaseframe_;
   Eigen::Vector3d map_rtk_pose_;
-  Eigen::Vector3d arming_gps_pose_;
-  Eigen::Vector3d gps_odom_pose_;
-  Eigen::Vector3d rtk_baseoffsets_;
+  Eigen::Vector3d rtkbase_offsets_;
   
   public:
     StateManager();
@@ -133,10 +136,10 @@ class StateManager: public rclcpp::Node
     /* Callback handlers for mavros data */
     rclcpp::Subscription <std_msgs::msg::Float64>::SharedPtr compass_sub_;
     rclcpp::Subscription <nav_msgs::msg::Odometry>::SharedPtr mavros_gpsodom_sub_;
-    rclcpp::Subscription <geometry_msgs::msg::Vector3>::SharedPtr mavros_rtk_sub_;
+    rclcpp::Subscription <GeomVec3>::SharedPtr rtkbase_offs_sub_;
     void mavrosGpsOdomCallback( const nav_msgs::msg::Odometry::ConstSharedPtr );
     void mavrosCompassCallback( const std_msgs::msg::Float64::ConstSharedPtr );
-    void mavrosRtkBaselineCallback( const geometry_msgs::msg::Vector3::ConstSharedPtr );
+    void rtkBaselineCallback( const GeomVec3::ConstSharedPtr );
     
     /* handlers for locking map frame origins */
     inline void lockArmingGps( bool _lock = true )
@@ -145,7 +148,7 @@ class StateManager: public rclcpp::Node
     }
     inline void lockMapRTK( bool _lock = true )
     {
-      map_rtk_pose_ = static_cast<double>(_lock && use_rtkbaseframe_) * rtk_baseoffsets_;
+      map_rtk_pose_ = static_cast<double>(_lock && use_rtkbaseframe_) * rtkbase_offsets_;
     }
     
     rclcpp::Service<BoolServ>::SharedPtr maplock_srv_;

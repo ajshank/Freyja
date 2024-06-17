@@ -262,9 +262,9 @@ void StateManager::mavrosGpsOdomCallback( const nav_msgs::msg::Odometry::ConstSh
 }
 
 
-void StateManager::mavrosRtkBaselineCallback( const geometry_msgs::msg::Vector3::ConstSharedPtr msg )
+void StateManager::rtkBaselineCallback( const GeomVec3::ConstSharedPtr msg )
 {
-  rtk_baseoffsets_ << msg -> x, msg -> y, msg -> z;
+  rtkbase_offsets_ << msg -> x, msg -> y, msg -> z;
 }
 
 void StateManager::maplockArmingHandler( const BoolServ::Request::SharedPtr rq, 

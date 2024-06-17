@@ -218,7 +218,7 @@ MavrosHandler::MavrosHandler() :  Node( ROS_NODE_NAME )
 
   atti_pub_ = create_publisher <AttiTarget> ( "mavros/setpoint_raw/attitude", 1 );
   fstatus_pub_ = create_publisher <FreyjaIfaceStatus> ( "freyja_interface_status", 1 );
-  baseline_pub_ = create_publisher <GeomVec3> ( "ublox_f9p_rtkbaseline", 1 );
+  baseline_pub_ = create_publisher <GeomVec3> ( "ubxf9p_rtkbase_offset", 1 );
 
   /* Service provider for bias compensation */
   bias_enable_serv_ = create_service <BoolServ> ( "set_onground_idle",

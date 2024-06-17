@@ -145,7 +145,10 @@ void StateManager::initTfManager()
 void StateManager::initPixhawkManager()
 {
   declare_parameter<bool>( "use_rtkbaseframe", false );
+  declare_parameter<std::string>( "rtkbase_offset_type", "base" );
+
   get_parameter( "use_rtkbaseframe", use_rtkbaseframe_ );
+  get_parameter( "rtkbase_offset_type", rtkbase_offset_type_ );
 
   have_arming_origin_ = false;
   // mavros_gpsraw_sub_ = create_subscription( "/mavros/global_position/global", 1,
@@ -153,13 +156,27 @@ void StateManager::initPixhawkManager()
   auto qos = rclcpp::QoS(rclcpp::KeepLast(5)).best_effort().durability_volatile();
   mavros_gpsodom_sub_ = create_subscription<nav_msgs::msg::Odometry> ( "mavros/global_position/local", qos,
                                 std::bind( &StateManager::mavrosGpsOdomCallback, this, _1 ) );
-  mavros_rtk_sub_ = create_subscription<geometry_msgs::msg::Vector3> ( "ublox_f9p_rtkbaseline", 1,
-                                std::bind( &StateManager::mavrosRtkBaselineCallback, this, _1 ) );
   compass_sub_ = create_subscription<std_msgs::msg::Float64> ( "mavros/global_position/compass_hdg", qos, 
 				                        std::bind( &StateManager::mavrosCompassCallback, this, _1 ) );
 				                
   maplock_srv_ = create_service <BoolServ> ( "lock_arming_mapframe", 
                         std::bind(&StateManager::maplockArmingHandler, this, _1, _2 ) );
+
+  std::string bframe_topic = "ubxf9p_rtkbase_offset";
+  if( rtkbase_offset_type_ == "custom" )
+  {
+    bframe_topic = "custom_rtkbase_offset";
+    RCLCPP_WARN( get_logger(), "Using custom base-frame!" );
+  }
+
+  rtkbase_offs_sub_ = create_subscription<GeomVec3> ( bframe_topic, 1,
+                                std::bind( &StateManager::rtkBaselineCallback, this, _1 ) );
+
+  /* initialise containers to avoid garbage */
+  map_rtk_pose_.setZero();
+  gps_odom_pose_.setZero();
+  arming_gps_pose_.setZero();
+  rtkbase_offsets_.setZero();
 }
 
 // void StateManager::initCameraManager()
