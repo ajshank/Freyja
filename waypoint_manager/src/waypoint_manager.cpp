@@ -137,8 +137,8 @@ class WaypointManager
     inline void setCurrentState( const PosVelAccNED &_cs )
     { // this variable is a 3x3 matrix
       planning_cur_state_ << _cs.head<3>(),
-                            _cs.tail<3>(),
-                            0.0, 0.0, 0.0;
+                             _cs.block<1,3>(0,3),
+                             0.0, 0.0, 0.0;
     }
     inline void setWaypointModeAndBehav( WaypointMode::WaypointMode &m, TerminalBehaviour::TerminalBehaviour &t )
     { // simply copy
