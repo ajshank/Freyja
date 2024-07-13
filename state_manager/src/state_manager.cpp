@@ -144,9 +144,11 @@ void StateManager::initTfManager()
 
 void StateManager::initPixhawkManager()
 {
+  declare_parameter<bool>( "use_zvel_from_ap", true );
   declare_parameter<bool>( "use_rtkbaseframe", false );
   declare_parameter<std::string>( "rtkbase_offset_type", "base" );
 
+  get_parameter( "use_zvel_from_ap", use_zvel_from_ap_ );
   get_parameter( "use_rtkbaseframe", use_rtkbaseframe_ );
   get_parameter( "rtkbase_offset_type", rtkbase_offset_type_ );
 
@@ -162,6 +164,21 @@ void StateManager::initPixhawkManager()
   maplock_srv_ = create_service <BoolServ> ( "lock_arming_mapframe", 
                         std::bind(&StateManager::maplockArmingHandler, this, _1, _2 ) );
 
+  if( !use_zvel_from_ap_ )
+  {
+    /* We're asked not to trust z-axis vel from autopilot; must estimate it ourselves.
+       Since positions are likely produced by an EKF onboard, we'll use a simple
+       gauss filter here.
+    */
+    RCLCPP_INFO( get_logger(), "Using gauss filter to estimate z-vel!" );
+    std::vector<double> fc{ 0.1534,	0.2214,	0.2504,	0.2214,	0.1534 };
+    int flen = 5;
+    rate_filter_ = std::make_shared<freyja_utils::ConvFilters>( "gauss", flen, fc );
+    prev_vd_.resize( flen );
+    last_pd_ = 0.0;
+    lastUpdateTime_ = now();
+  }
+  
   std::string bframe_topic = "ubxf9p_rtkbase_offset";
   if( rtkbase_offset_type_ == "custom" )
   {
