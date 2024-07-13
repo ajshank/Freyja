@@ -102,6 +102,7 @@ class StateManager: public rclcpp::Node
   Eigen::Vector3d gps_odom_pose_;
   Eigen::Vector3d arming_gps_pose_;
   bool have_arming_origin_;
+  bool use_zvel_from_ap_;
   
   /* containers for RTK/map handling */
   std::string rtkbase_offset_type_;

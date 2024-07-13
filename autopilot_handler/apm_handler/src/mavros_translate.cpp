@@ -296,6 +296,8 @@ void MavrosHandler::rpytCommandCallback( const CtrlCommand::ConstSharedPtr msg )
   /* call mavros helper function */
   if( !on_ground_idle_ )
     sendToMavros( tgt_pitch, tgt_roll, tgt_yawrate, tgt_thrust );
+  else
+    sendToMavros( 0.0, 0.0, 0.0, 0.0 );
 }
 
 void MavrosHandler::sendToMavros( const double &p, const double &r, const double &y, const double &t )

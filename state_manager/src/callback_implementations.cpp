@@ -232,6 +232,7 @@ void StateManager::mavrosGpsOdomCallback( const nav_msgs::msg::Odometry::ConstSh
   
   static CurrentState state_msg;
   static Eigen::Matrix<double, 6, 1> pos_vel_;
+  double time_since = (now() - lastUpdateTime_).seconds();
   
   // update containers anyway (needed for capturing arming location)
   gps_odom_pose_ << msg -> pose.pose.position.y,
@@ -252,13 +253,27 @@ void StateManager::mavrosGpsOdomCallback( const nav_msgs::msg::Odometry::ConstSh
                         msg -> twist.twist.linear.x,
                         ( msg -> twist.twist.linear.z );  // @TODO unclear what frame this is in from mavros
   
+  if( !use_zvel_from_ap_ )
+  {
+    // if z-vel from autopilot can't be trusted, calculate numeric derivative here
+    double vd = (pos_vel_.coeff(2) - last_pd_)/time_since;
+    prev_vd_.erase( prev_vd_.begin() );
+    prev_vd_.push_back( vd );
+    rate_filter_->filterObservations(prev_vd_, vd);
+    pos_vel_.coeffRef(5) = vd;
+    last_pd_ = pos_vel_.coeff(2);
+  }
+  
   for( unsigned int idx=0; idx<6; idx++ )
     state_msg.state_vector[idx] = pos_vel_[idx];
 
   state_msg.state_vector[8] = DEG2RAD( compass_yaw_ );
   
-  state_msg.header.stamp = now();
+  auto tnow = now();
+  state_msg.header.stamp = tnow;
   state_pub_ -> publish( state_msg );
+
+  lastUpdateTime_ = tnow;
 }
 
 
