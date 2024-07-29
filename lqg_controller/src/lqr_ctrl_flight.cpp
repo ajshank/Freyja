@@ -12,6 +12,7 @@
 
 #define ROS_NODE_NAME "lqg_control"
 #define pi 3.1416
+#define acc_g 9.81
 
 LQRController::LQRController(BiasEstimator &b) : Node( ROS_NODE_NAME ),
                                                  bias_est_( b )
@@ -31,11 +32,12 @@ LQRController::LQRController(BiasEstimator &b) : Node( ROS_NODE_NAME ),
   declare_parameter<bool>( "apply_extf_corr", false );
 
   declare_parameter<std::string>( "controller_type", "pos-vel" );
+  declare_parameter<bool>( "use_rate_control", false );
   
   get_parameter( "controller_rate", controller_rate_ );
   get_parameter( "total_mass", total_mass_ );
   get_parameter( "use_stricter_gains", use_stricter_gains_ );
-  
+  get_parameter( "use_rate_control", use_rate_controller_ );
   
   /* initialise system, matrices and controller configuration */
   initLqrSystem();
@@ -165,6 +167,13 @@ void LQRController::initLqrSystem()
   }
   else
     RCLCPP_ERROR( get_logger(), "LQR: Controller type unknown!" );
+
+
+  lqr_K_rate_.setZero();
+  lqr_K_rate_ << 1.826, 0.0, 0.0, 3.275, 0.0, 0.0, 2.572, 0.0, 0.0, 0.0,
+                0.0, 1.826, 0.0, 0.0, 3.275, 0.0, 0.0, 2.572, 0.0, 0.0,
+                0.0, 0.0, 1.826, 0.0, 0.0, 3.275, 0.0, 0.0, 2.572, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0;
 }
 
 void LQRController::biasEnableServer( const BoolServ::Request::SharedPtr rq,
@@ -206,21 +215,27 @@ constexpr double LQRController::calcYawError( const double &a, const double &b )
   return yd-pi; 
 }
 
-void LQRController::stateCallback( const CurrentState::ConstSharedPtr msg )
+void LQRController::stateCallback( const CurrentStateNamed::ConstSharedPtr msg )
 {
   /* Parse message to obtain state and reduced state information */
   static Eigen::Matrix<double, 7, 1> current_state;
   static Eigen::Matrix<double, 7, 1> state_err;
+  static Eigen::Matrix<double, 10, 1> cstate_rate;
 
-  float yaw = msg->state_vector[8];
+  double yaw = msg->ang_rpy[2];
   rot_yaw_ << std::cos(yaw), std::sin(yaw), 0,
              -std::sin(yaw), std::cos(yaw), 0,
               0, 0, 1;
              
   /* state is the first 6 elements, and yaw */
-  current_state << Eigen::Map<const PosVelNED>( msg->state_vector.data() ),
-                   double(yaw);
-
+  current_state << Eigen::Map<const Eigen::Vector3d>(msg->pos_ned.data()),
+                   Eigen::Map<const Eigen::Vector3d>(msg->vel_ned.data()),
+                   yaw;
+  
+  cstate_rate << Eigen::Map<const Eigen::Vector3d>(msg->pos_ned.data()),
+                 Eigen::Map<const Eigen::Vector3d>(msg->vel_ned.data()),
+                 Eigen::Map<const Eigen::Vector3d>(msg->acc_ned.data()),
+                yaw;
   /* set measurement for bias estimator */
   if( bias_compensation_req_ )
     bias_est_.setMeasurement( current_state.head<6>() );
@@ -231,8 +246,13 @@ void LQRController::stateCallback( const CurrentState::ConstSharedPtr msg )
   {
     rsmtx.lock();
     state_err.head<6>() = current_state.head<6>() - reference_state_.head<6>();
+    
     /* yaw-error is done differently */
     state_err(6) = calcYawError( current_state(6), reference_state_(6) );
+    
+    cstate_rate << state_err.head<6>(),
+                   cstate_rate.segment<3>(6) - reference_ff_.head<3>(),
+                   state_err.coeff(6);
     rsmtx.unlock();
     reduced_state_ = std::move( state_err );
     have_state_update_ = true;
@@ -273,7 +293,9 @@ void LQRController::computeFeedback( )
   float roll, pitch, yaw;
   double T;
   static Eigen::Matrix<double, 4, 1> control_input;
+  static Eigen::Matrix<double, 4, 1> control_input_rate;
   static Eigen::Matrix<double, 7, 1> state_err;
+  static Eigen::Matrix<double, 10, 1> state_err_rate;
   
   bool state_valid = true;
   auto tnow = now();
@@ -298,6 +320,10 @@ void LQRController::computeFeedback( )
     /* Force saturation on downward acceleration */
     control_input(2) = std::min( control_input(2), 8.0 );
     control_input(2) -= 9.81;
+
+    /* Compute rate control */
+    state_err_rate = std::move( reduced_state_rate_ );
+    control_input_rate = -1* lqr_K_rate_ * state_err_rate;
     
     /* See if bias compensation was requested .. */
     if( bias_compensation_req_ )
@@ -311,12 +337,23 @@ void LQRController::computeFeedback( )
   
     /* Thrust */
     T = total_mass_ * control_input.head<3>().norm();
-  
-    /* Roll, pitch and yawrate */
-    Eigen::Matrix<double, 3, 1> Z = rot_yaw_ * control_input.head<3>() * (-total_mass_/T);
-    roll = std::asin( -Z(1) );
-    pitch = std::atan( Z(0)/Z(2) );
-    yaw = control_input(3);
+
+    if( use_rate_controller_ )
+    {
+      control_input_rate.head<3>() = rot_yaw_*control_input_rate.head<3>();
+      roll = control_input_rate.coeff(0);
+      pitch = control_input_rate.coeff(1);
+      yaw = control_input_rate.coeff(3);
+      T = total_mass_*acc_g - T;
+    }
+    else
+    {
+      /* Roll, pitch and yawrate */
+      Eigen::Matrix<double, 3, 1> Z = rot_yaw_ * control_input.head<3>() * (-total_mass_/T);
+      roll = std::asin( -Z(1) );
+      pitch = std::atan( Z(0)/Z(2) );
+      yaw = control_input(3);
+    }
   }
   
   /* Actual commanded input */
@@ -326,7 +363,7 @@ void LQRController::computeFeedback( )
   ctrl_cmd.pitch = pitch;
   ctrl_cmd.yaw = yaw;
   ctrl_cmd.thrust = T;
-  ctrl_cmd.ctrl_mode = 0b00001111;
+  ctrl_cmd.ctrl_mode = 0b00001111 | (use_rate_controller_*0b10001111);
   atti_cmd_pub_ -> publish( ctrl_cmd );
   
 

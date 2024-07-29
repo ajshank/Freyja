@@ -25,6 +25,7 @@
 #include "freyja_msgs/msg/ctrl_command.hpp"
 #include <freyja_msgs/msg/controller_debug.hpp>
 #include <freyja_msgs/msg/reference_state.hpp>
+#include "freyja_msgs/msg/current_state_named.hpp"
 
 #include <eigen3/Eigen/Dense>
 
@@ -36,9 +37,11 @@ typedef std_srvs::srv::SetBool                BoolServ;
 typedef freyja_msgs::msg::CtrlCommand         RPYT_Command;
 typedef freyja_msgs::msg::ControllerDebug     CTRL_Debug;
 typedef geometry_msgs::msg::Vector3Stamped    GeomVec3Stamped;
+typedef freyja_msgs::msg::CurrentStateNamed   CurrentStateNamed;
 
 typedef Eigen::Matrix<double, 6, 1> PosVelNED;
 typedef Eigen::Matrix<double, 4, 1> Vector4d;
+typedef Eigen::Matrix<double, 9, 1> PosVelAccNED;
 
 using std::placeholders::_1;
 using std::placeholders::_2;
@@ -47,6 +50,7 @@ class LQRController : public rclcpp::Node
 {
   CurrentState state_vector_;
   Eigen::Matrix<double, 7, 1> reduced_state_;
+  Eigen::Matrix<double, 10, 1> reduced_state_rate_;
   
   /* Reference state vector */
   Eigen::Matrix<double, 7, 1> reference_state_;
@@ -61,7 +65,9 @@ class LQRController : public rclcpp::Node
   Eigen::MatrixXf sys_A_, sys_B_;
   Eigen::MatrixXf lqr_Q_, lqr_R_;
   Eigen::Matrix<double, 4, 7> lqr_K_;
+  Eigen::Matrix<double, 4, 10> lqr_K_rate_;
   bool use_stricter_gains_;
+  bool use_rate_controller_;
   
   /* Vehicle properties */
   float total_mass_;
@@ -97,8 +103,8 @@ class LQRController : public rclcpp::Node
     LQRController( BiasEstimator & );
     void initLqrSystem();
     
-    rclcpp::Subscription<CurrentState>::SharedPtr state_sub_;
-    void stateCallback( const CurrentState::ConstSharedPtr ) __attribute__((hot));
+    rclcpp::Subscription<CurrentStateNamed>::SharedPtr state_sub_;
+    void stateCallback( const CurrentStateNamed::ConstSharedPtr ) __attribute__((hot));
     
     rclcpp::Service<BoolServ>::SharedPtr bias_enable_serv_;
     void biasEnableServer( const BoolServ::Request::SharedPtr,
