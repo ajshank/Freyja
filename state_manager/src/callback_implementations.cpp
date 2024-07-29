@@ -6,10 +6,12 @@ void StateManager::mocapCallback( const TFStamped::ConstSharedPtr msg )
   /* Note that Vicon gives us ENU, while we use NED */
   
   static CurrentState state_msg;
+  static CurrentStateNamed named_state_msg;
   double time_since = (now() - lastUpdateTime_).seconds();
-  static Eigen::VectorXd best_estimate_;
+  static Eigen::VectorXd transl_states_;
+  static Eigen::VectorXd angular_states_;
 
-  if( use_kf_ )
+  if( is_markov_filter_ )
   {
     static Eigen::Matrix<double, 3, 1> meas_z_;
 
@@ -18,9 +20,18 @@ void StateManager::mocapCallback( const TFStamped::ConstSharedPtr msg )
                 -msg->transform.translation.z;
 
     pose_filter_->setMeasurementInput( meas_z_ );
-    pose_filter_->getStateEstimate( best_estimate_, 9 );
-    for( int idx=0; idx<6; idx++ )
-      state_vector_[idx] = best_estimate_.coeff(idx);
+    pose_filter_->getStateEstimate( transl_states_, 9 );
+    if( enable_depr_statepub_ )
+    {
+      for( int idx=0; idx<6; idx++ )
+        state_vector_[idx] = transl_states_.coeff(idx);
+    }
+    else
+    {
+      Eigen::Map<Eigen::Vector3d>(named_state_msg.pos_ned.data(), 3) = transl_states_.segment<3>(0);
+      Eigen::Map<Eigen::Vector3d>(named_state_msg.vel_ned.data(), 3) = transl_states_.segment<3>(3);
+      Eigen::Map<Eigen::Vector3d>(named_state_msg.acc_ned.data(), 3) = transl_states_.segment<3>(6);
+    }
   }
   else
   {
@@ -72,20 +83,32 @@ void StateManager::mocapCallback( const TFStamped::ConstSharedPtr msg )
   tf2::impl::getEulerYPR( q, yaw, pitch, roll );
 
   yaw = F_PI/2.0 - yaw;         // convert ENU yaw to NED yaw
-  state_vector_[6] = roll;
-  state_vector_[7] = pitch;
-  state_vector_[8] = yaw;
-
-  
-  /* rpy rates (no filter yet, use with caution!) */
-  if( use_kf_ )
+  ang_filter_->setMeasurementInput(Eigen::Vector3d{roll, pitch, yaw});
+  ang_filter_->getStateEstimate(angular_states_);
+  if( enable_depr_statepub_ )
   {
-    state_vector_[9] = best_estimate_.coeff(6);    //  ( roll - last_roll_ )/time_since;
-    state_vector_[10] = best_estimate_.coeff(7);   //  ( pitch - last_pitch_ )/time_since;
-    state_vector_[11] = best_estimate_.coeff(8);   //  std::fmod( (yaw - last_yaw_)/time_since, 2*F_PI );
+    state_vector_[6] = roll;
+    state_vector_[7] = pitch;
+    state_vector_[8] = yaw;
+  
+    /* rpy rates (no filter yet, use with caution!) */
+    if( is_markov_filter_ )
+    {
+      state_vector_[9] = transl_states_.coeff(6);    //  ( roll - last_roll_ )/time_since;
+      state_vector_[10] = transl_states_.coeff(7);   //  ( pitch - last_pitch_ )/time_since;
+      state_vector_[11] = transl_states_.coeff(8);   //  std::fmod( (yaw - last_yaw_)/time_since, 2*F_PI );
+    }
+  }
+  else
+  {
+    //named_state_msg.ang_rpy = {roll, pitch, yaw};
+    Eigen::Map<Eigen::Vector3d>(named_state_msg.ang_rpy.data(), 3) = angular_states_.segment<3>(0);
+    Eigen::Map<Eigen::Vector3d>(named_state_msg.rat_rpy.data(), 3) = angular_states_.segment<3>(3);
+    Eigen::Map<Eigen::Vector3d>(named_state_msg.acc_rpy.data(), 3) = angular_states_.segment<3>(6);
   }
   /* age of this data */
   state_vector_[12] = time_since;
+  state_msg.state_valid = 1;
   
   /* Update the current time this happened */
   lastUpdateTime_ = now();
@@ -98,13 +121,18 @@ void StateManager::mocapCallback( const TFStamped::ConstSharedPtr msg )
   last_pitch_ = pitch;
   last_yaw_ = yaw;
 
-  for( uint8_t idx = 0; idx < STATE_VECTOR_LEN; idx++ )
-    state_msg.state_vector[idx] = state_vector_[idx];
-  
-  state_msg.state_valid = 1;
   /* Copy over and publish right away */
   state_msg.header.stamp = now();
-  state_pub_ -> publish( state_msg );
+  if( enable_depr_statepub_ )
+  {
+    for( uint8_t idx = 0; idx < STATE_VECTOR_LEN; idx++ )
+      state_msg.state_vector[idx] = state_vector_[idx];
+    state_pub_ -> publish( state_msg );
+  }
+  else
+  {
+    named_state_pub_->publish( named_state_msg );
+  }
 }
 
 void StateManager::timerTfCallback()

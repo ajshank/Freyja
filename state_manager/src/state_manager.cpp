@@ -21,11 +21,13 @@ StateManager::StateManager() : Node( rclcpp_NODE_NAME )
   declare_parameter<std::string>( "filter_type", "median" );
   declare_parameter<int>( "filter_length", 21 );
   declare_parameter<std::vector<double>> ("kf_params", std::vector<double>({0.1, 0.1, 0.2, 0.5}));
+  declare_parameter<bool>("enable_depr_statepub", false);
 
 
   get_parameter( "state_source", state_source_ );
   get_parameter( "filter_type", filter_type_ );
   get_parameter( "filter_length", filter_len_ );
+  get_parameter( "enable_depr_statepub", enable_depr_statepub_ );
   
   if( state_source_ == "mocap" )
     initMocapManager();
@@ -34,10 +36,11 @@ StateManager::StateManager() : Node( rclcpp_NODE_NAME )
   else if (state_source_ == "apm" )
      initPixhawkManager();
 
-  use_kf_ = false;
+  is_markov_filter_ = false;
 
   /* Announce state publisher */
   state_pub_ = create_publisher <CurrentState> ( "current_state", 1 ); 
+  named_state_pub_ = create_publisher <CurrentStateNamed> ( "current_state_named", 1 ); 
   
 
   if( filter_type_ == "gauss" )
@@ -73,15 +76,23 @@ StateManager::StateManager() : Node( rclcpp_NODE_NAME )
     std::vector<double> kparams;
     get_parameter("kf_params", kparams);
     pose_filter_ = std::make_shared<freyja_utils::KalmanFilter>(200, kparams);
-    use_kf_ = true;
+    ang_filter_ = std::make_shared<freyja_utils::AlphaBetaGammaFilter>();
+    is_markov_filter_ = true;
     RCLCPP_INFO( get_logger(), "Kalman filter init!" );
     filter_len_ = 0;
+  }
+  else if( filter_type_ == "albtgm" )
+  {
+    pose_filter_ = std::make_shared<freyja_utils::AlphaBetaGammaFilter>();
+    is_markov_filter_ = true;
+    filter_len_ = 0;
+    RCLCPP_INFO( get_logger(), "Alpha-beta-gamma filter init!" );
   }
   else
     RCLCPP_WARN( get_logger(), "No filter initialised by Freyja." );
   
   // init history containers
-  if( !use_kf_ )
+  if( !is_markov_filter_ )
   {
     prev_pn_.resize( filter_len_ );
     prev_pe_.resize( filter_len_ );

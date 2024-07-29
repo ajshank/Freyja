@@ -29,6 +29,7 @@
 #endif
 
 #include "freyja_msgs/msg/current_state.hpp"
+#include "freyja_msgs/msg/current_state_named.hpp"
 #include "freyja_msgs/msg/asctec_data.hpp"
 
 #include <eigen3/Eigen/Dense>
@@ -42,6 +43,7 @@ typedef nav_msgs::msg::Odometry CameraOdom;
 typedef std_srvs::srv::SetBool BoolServ;
 
 typedef freyja_msgs::msg::CurrentState CurrentState;
+typedef freyja_msgs::msg::CurrentStateNamed CurrentStateNamed;
 
 using std::placeholders::_1;
 using std::placeholders::_2;
@@ -87,7 +89,8 @@ class StateManager: public rclcpp::Node
   std::string filter_type_;
   std::shared_ptr<freyja_utils::Filter> pose_filter_;
   std::shared_ptr<freyja_utils::Filter> rate_filter_;
-  bool use_kf_ = false;
+  std::shared_ptr<freyja_utils::Filter> ang_filter_;
+  bool is_markov_filter_ = false;
 
   /* tf related */
   std::string tf_base_frame_;
@@ -109,6 +112,8 @@ class StateManager: public rclcpp::Node
   bool use_rtkbaseframe_;
   Eigen::Vector3d map_rtk_pose_;
   Eigen::Vector3d rtkbase_offsets_;
+
+  bool enable_depr_statepub_;
   
   public:
     StateManager();
@@ -159,5 +164,6 @@ class StateManager: public rclcpp::Node
     
     /* Publisher for state information */
     rclcpp::Publisher<CurrentState>::SharedPtr state_pub_;
+    rclcpp::Publisher<CurrentStateNamed>::SharedPtr named_state_pub_;
 };
 #endif

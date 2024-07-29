@@ -26,6 +26,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/lqr_ctrl/WheelCommand.msg"
   "msg/state_manager/CurrentState.msg"
   "msg/state_manager/CurrentStateBiasEst.msg"
+  "msg/state_manager/CurrentStateNamed.msg"
   "msg/vehicle_handler/FreyjaInterfaceStatus.msg"
   "msg/nonstd_modules/RLStatesActions.msg"
   DEPENDENCIES std_msgs geometry_msgs builtin_interfaces
