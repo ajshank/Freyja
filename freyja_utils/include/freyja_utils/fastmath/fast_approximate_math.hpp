@@ -29,7 +29,7 @@ namespace freyja_utils
     #define posneg(x) ((x>0)*2-1)
     // fast and usually correct signum function
     #define signum(x) ((0<x) - (x<0))
-    constexpr inline double abs( double &x ) noexcept { return x > 0? x: -x; }
+    constexpr inline double abs( const double &x ) noexcept { return x > 0? x: -x; }
     constexpr inline int round(double x) noexcept
     { return static_cast<int>(x+0.5*posneg(x)); }
     constexpr inline double fmod( double x, double y ) noexcept
@@ -37,13 +37,16 @@ namespace freyja_utils
     constexpr inline double constrainAngleRad( double x ) noexcept
     {
       // limit angle to [-pi,pi]
-      x = fmod(x+pi,2*pi);
+      x = fast_approx::fmod(x+pi,2*pi);
       return( x < 0 ? x+pi : x-pi );
     }
     constexpr inline double sine(const double &a) noexcept
       { return a - cube(a)/fact3 + a*a*cube(a)/fact5 - a*cube(a)*cube(a)/fact7; }
     constexpr inline double cosine(const double &a) noexcept
       { return 1.0 - a*a/2.0 + a*cube(a)/(4*fact3) - cube(a)*cube(a)/(6*fact5); }
+    
+    constexpr inline double angleDiffRad(double a, double b) noexcept
+      { return (pi - fast_approx::abs(fast_approx::abs(a - b) - pi)); }
   }
 
   namespace fast_checks

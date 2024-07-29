@@ -13,5 +13,6 @@ namespace freyja_utils
 
 }  // namespace freyja_utils
 
-#include "filters/filters.cpp"
 #include "fastmath/fast_approximate_math.cpp"
+#include "filters/filters.cpp"
+

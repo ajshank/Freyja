@@ -69,5 +69,6 @@ namespace freyja_utils
 #include "freyja_conv_filters.hpp"
 #include "freyja_median_filter.hpp"
 #include "freyja_kalman_filter.hpp"
+#include "freyja_albtgm_filter.hpp"
 
 #endif
