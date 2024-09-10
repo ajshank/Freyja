@@ -16,13 +16,22 @@ launch:
 - arg: { name: "use_mavros",        default: "false"  }
 - arg: { name: "comm_port",         default: "/dev/ttyUSB0:921600"  }
 - arg: { name: "use_arbitrator",    default: "false" }
-- arg: { name: "numeric_id",        default: "1" }
+- arg: { name: "numeric_id",        default: "-1" }
   # extras
 - arg: { name: "use_waypoint_handler", default: "false" }
 - arg: { name: "initial_wpt_NEDy",     default: "[0.0, 0.0, 0.0, 3.14]" }
 - arg: { name: "use_examples",         default: "false" }
 
 - group:
+  - let:                      # overwrite numeric_id as wlan0.hostaddr if unspecified
+      name: "numeric_id"
+      value: "$(command '/bin/bash $(find-pkg-share freyja_configfiles)/scripts/get_hostoctet.sh wlan0')"
+      if: "$(eval ' $(var numeric_id) == -1 and \"$(var use_mavros)\"==\"true\"')"
+  - let:                      # overwrite namespace as "R{numeric_id}" if unspecified
+      name: "use_namespace"
+      value: "$(eval 'str(\"R\") + str(max(0,$(var numeric_id)))')"
+      if: "$(eval ' \"$(var use_namespace)\" == \"\" ')"
+
   - push-ros-namespace:
       namespace:  "$(var use_namespace)"
   - node:
@@ -50,7 +59,7 @@ launch:
       - { name:   "apply_est_biases",   value:  true }
       - { name:   "apply_extf_corr",    value:  false }
       - { name:   "enable_flatness_ff", value:  "$(var flatness_ff)" }
-      - { name:   "flatness_ff_factor", value:  0.3 }
+      - { name:   "flatness_ff_factor", value:  0.7 }
       - { name:   "use_stricter_gains", value:  false }
 
   - node:
@@ -60,6 +69,8 @@ launch:
       param:
       - { name:   "init_hover_pd",      value:  -1.75 }     # takeoff to this height
       - { name:   "takeoff_land_spd",   value:  0.2 }       # v.speed for takeoff & landing
+      - { name:   "await_cmd_after_rc", value:  true }
+      - { name:   "use_ap_landing",     value:  false }
 
   - node:
       if:         "$(var use_waypoint_handler)"

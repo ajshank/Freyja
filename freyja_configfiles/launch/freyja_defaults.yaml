@@ -1,0 +1,43 @@
+/**:    # note that this affects ALL nodes!
+  ros__parameters:
+  ## state manager
+    state_source:         "tf-mocap"
+    tf_rate:              100
+    tf_buffer_time:       2
+    tf_myframe:           "agent-1"
+    tf_baseframe:         "map"
+    filter_type:          "kalman"          # 'gauss' 'median' 'lwma' 'kalman' 'savit-gol'
+    filter_len:           5                 # has no effect if 'kalman'
+    kf_params:            [0.001, 5.0]      # [meas.cov, proc.cov]
+    mocap_topic:          "/mocap/a1/a1"    # used if state-source=mocap
+    use_rtkbaseframe:     false
+    rtkbase_offset_type:  "base"            # 'base' or 'custom'
+  ## lqg control
+    controller_type:      "pos-vel"         # pos-vel, vel-only, open-loop
+    total_mass:           0.85              # total in-air
+    controller_rate:      50
+    estimator_rate:       20
+    bias_estimator:       "always-off"      # 'always-{on/off}', 'auto'
+    apply_est_biases:     true              # apply corrections from bias estimator
+    apply_extf_corr:      false             # correct for provided external forces
+    enable_flatness_ff:   true
+    flatness_ff_factor:   1.0
+    use_stricter_gains:   false
+    mass_estimation:      true              # estimate approx mass
+    mass_correction:      false             # apply estimated mass (discouraged)
+  ## waypoint manager
+    init_NEDy:            [0.0]             # setting this to a 4-vec will trigger init wpt
+  ## apm handler
+    thrust_scaler:        200               # scales thrust down
+    use_thrust_calib:     false             # use a calib poly eqn.
+  ## flight mode arbitrator
+    takeoff_land_spd:     0.2               # m/s
+    init_hover_pd:        -1.5              # hover here at first takeoff
+    arm_takeoff_delay:    4.0               # wait this long to takeoff after arming
+    mission_wdg_timeout:  1.0               # switch to auto-hover if no target for a while 
+    hover_wdg_timeout:    -1.0              # land if auto-hover for a while (disable=-1)
+    await_cmd_after_rc:   true              # wait for arm-service call even if pilot okays
+    sys_ready_checks:     3                 # bitfield: 0b[x x x x x rtk, cstate, connected]
+    use_ap_landing:       false             # use autopilot's land function (use outdoors)
+    
+  
