@@ -5,10 +5,15 @@
 #include "mavros_msgs/msg/state.hpp"
 #include "mavros_msgs/msg/rc_in.hpp"
 #include "mavros_msgs/srv/command_bool.hpp"
+#include "mavros_msgs/srv/command_long.hpp"
 
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/impl/utils.h>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#ifdef ROSVER_FOXY_OR_GALAC
+  #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#else
+  #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#endif
 #include "geometry_msgs/msg/quaternion.hpp"
 
 #include "std_srvs/srv/set_bool.hpp"
@@ -26,6 +31,7 @@ typedef freyja_msgs::msg::FreyjaInterfaceStatus FreyjaIfaceStatus;
 typedef freyja_msgs::msg::CurrentState          CurrentState;
 typedef freyja_msgs::msg::ReferenceState        ReferenceState;
 typedef mavros_msgs::srv::CommandBool           MavrosArming;
+typedef mavros_msgs::srv::CommandLong           MavrosCmdLong;
 typedef std_srvs::srv::Trigger                  Trigger;
 typedef std_srvs::srv::SetBool                  BoolServ;
 
@@ -111,6 +117,7 @@ class ApmModeArbitrator : public rclcpp::Node
   bool software_trigger_recv;       // has user code triggered arm+takeoff request
   bool await_cmd_after_switch_;     // should we wait for user even after an RC switch?
   bool land_from_hovertimeout_;     // should we land if auto-hovering for some duration?
+  bool use_ap_landing_;             // if outdoors, just tell the autopilot to land for us
 
   uint8_t sysready_chk_flags_;      // bitmask for checks to perform
                                     // cast as uint8_t, [x x x x x gps_rtk, cur_state, conn]
@@ -129,6 +136,7 @@ class ApmModeArbitrator : public rclcpp::Node
 
   protected:
     void sendMavrosArmCommand( const bool );
+    void sendMavrosLandModeCommand();
     void loadParameters();
   
   public:
@@ -151,6 +159,7 @@ class ApmModeArbitrator : public rclcpp::Node
     void targetStateCallback( const ReferenceState::ConstSharedPtr );
 
     rclcpp::Client<MavrosArming>::SharedPtr arming_client_;
+    rclcpp::Client<MavrosCmdLong>::SharedPtr landmode_client_;
     rclcpp::Client<BoolServ>::SharedPtr biasreq_client_;
     rclcpp::Client<BoolServ>::SharedPtr extfcorr_client_;
     rclcpp::Client<BoolServ>::SharedPtr groundidle_client_;
