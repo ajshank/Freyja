@@ -65,7 +65,10 @@ ApmModeArbitrator::ApmModeArbitrator() : Node( ROS_NODE_NAME )
                               rp->success = true;
                             } );
   arbitrator_rate_ = 10.0;   // mode arbitrator runs at this rate, hz
-  manager_timer_ = create_timer( this, get_clock(),
+  manager_timer_ = create_timer( 
+                            #ifdef ROSVER_FOXY_OR_GALAC
+                              this, get_clock(),
+                            #endif
                             std::chrono::duration<float>(1.0/arbitrator_rate_),
                             std::bind(&ApmModeArbitrator::manager, this),
                             timer_cb_group_ );
