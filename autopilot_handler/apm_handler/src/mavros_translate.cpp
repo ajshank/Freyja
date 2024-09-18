@@ -18,7 +18,11 @@
 
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/impl/utils.h>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#ifdef ROSVER_FOXY_OR_GALAC
+  #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#else
+  #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#endif
 #include "geometry_msgs/msg/quaternion.hpp"
 
 #include "std_srvs/srv/set_bool.hpp"
