@@ -22,6 +22,7 @@ ApmModeArbitrator::ApmModeArbitrator() : Node( ROS_NODE_NAME )
 
   loadParameters();
   
+  has_conn_ = false;
   e_landing_ = false;
   arm_req_sent_ = false;
   target_state_avail_ = false;
@@ -107,7 +108,7 @@ void ApmModeArbitrator::sendMavrosArmCommand( const bool req )
   auto arm_req = std::make_shared<MavrosArming::Request> ();
   arm_req->value = req;
   arming_client_->async_send_request( arm_req );
-  RCLCPP_WARN( get_logger(), "Requesting arming state = %d.", req );
+  RCLCPP_INFO( get_logger(), "Requesting arming state = %d.", req );
 }
 
 void ApmModeArbitrator::sendMavrosLandModeCommand()
@@ -117,13 +118,13 @@ void ApmModeArbitrator::sendMavrosLandModeCommand()
   landmode_req->param1 = 1;       // ardupilot specific (always 1)
   landmode_req->param2 = 9;       // ardupilot specific (land-mode enum)
   landmode_client_->async_send_request( landmode_req );
-  RCLCPP_WARN( get_logger(), "Requesting landing mode!" );
+  RCLCPP_INFO( get_logger(), "Requesting landing mode!" );
 }
 
 void ApmModeArbitrator::eLandingServiceHandler( const Trigger::Request::SharedPtr rq,
                                                 const Trigger::Response::SharedPtr rp )
 {
-  RCLCPP_WARN( get_logger(), "** LAND REQUEST RECV **" );
+  RCLCPP_INFO( get_logger(), "** LAND REQUEST RECV **" );
   mission_mode_ = MissionMode::E_LANDING;
   rp->success = true;
 }
@@ -140,7 +141,7 @@ void ApmModeArbitrator::freyjaStatusCallback( const FreyjaIfaceStatus::ConstShar
   if( skip_initial_msgs < 20 )
   {
     skip_initial_msgs++;
-    RCLCPP_WARN( get_logger(), "Intentionally waiting .." );
+    RCLCPP_INFO( get_logger(), "Intentionally waiting .." );
     return;
   }
 
@@ -155,6 +156,7 @@ void ApmModeArbitrator::freyjaStatusCallback( const FreyjaIfaceStatus::ConstShar
     { //. this begins the state machine arbitration
       mission_mode_ = MissionMode::PENDING_PILOT;
       vehicle_mode_ = VehicleMode::DISARMED_NOCOMP;
+      has_conn_ = true;
     }
   }
   else
@@ -194,6 +196,15 @@ void ApmModeArbitrator::manager()
 
   switch( mission_mode_ )
   {
+    case MissionMode::NOT_INIT :
+      { //. ordinarily we do nothing here, but issue warning if we entered here after
+        //  having connected before: this indicates something is wrong.
+        if( has_conn_ )
+        {
+          RCLCPP_ERROR_THROTTLE(get_logger(), *(get_clock()), 500, "Freyja autopilot link timeout!");
+        }
+
+      }
     case MissionMode::PENDING_PILOT :
       { //. we are not in control at the moment, so keep checking if we are
         RCLCPP_INFO_THROTTLE( get_logger(), *(get_clock()), 2000, "Awaiting Pilot Switch .." );
@@ -263,7 +274,7 @@ void ApmModeArbitrator::manager()
         {
           manager_refstate_.pd -= (takeoff_spd_*1.0/arbitrator_rate_);
           manager_refstate_.vd = -takeoff_spd_;
-          RCLCPP_WARN_THROTTLE( get_logger(), *(get_clock()), 500, "TAKEOFF in-prog: %0.1f/%0.1f", pos_ned_(2), init_hover_pd_ );
+          RCLCPP_INFO_THROTTLE( get_logger(), *(get_clock()), 500, "TAKEOFF in-prog: %0.1f/%0.1f", pos_ned_(2), init_hover_pd_ );
         }
         else
         {

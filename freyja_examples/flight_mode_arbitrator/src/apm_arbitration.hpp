@@ -110,6 +110,7 @@ class ApmModeArbitrator : public rclcpp::Node
   float HOVER_WDG_TIMEOUT;          // wdog timeout to switch to landing
   float takeoff_spd_;               // rate of ascent (scalar)
 
+  bool has_conn_;                   // the manager has connected to autopilot (at least once)
   bool e_landing_;                  // in emergency landing [Freyja-controlled]
   bool arm_req_sent_;               // arming sent
   bool forward_ref_state_;          // should we simply fwd incoming reference (policy mode)
