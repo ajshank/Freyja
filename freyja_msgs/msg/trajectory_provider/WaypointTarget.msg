@@ -8,6 +8,9 @@ float64 terminal_vn
 float64 terminal_ve
 float64 terminal_vd
 float64 terminal_yaw
+float64 terminal_an
+float64 terminal_ae
+float64 terminal_ad
 
 # time allocated to travel from 'here' to the target
 float32 allocated_time
