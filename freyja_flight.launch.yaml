@@ -12,25 +12,35 @@ launch:
 - arg: { name: "flatness_ff",       default: "false" }        # use accel feed-fwd
 - arg: { name: "controller_type",   default: "pos-vel"  }     # pos-vel, vel-only, NEvel-Dpos
   # operational customisations
-- arg: { name: "use_namespace",     default: "" }
+- arg: { name: "use_namespace",     default: "" }             # automatically assign ns if empty
 - arg: { name: "use_mavros",        default: "false"  }
 - arg: { name: "comm_port",         default: "/dev/ttyUSB0:921600"  }
 - arg: { name: "use_arbitrator",    default: "false" }
-- arg: { name: "numeric_id",        default: "-1" }
+- arg: { name: "numeric_id",        default: "-1" }           # -1=override automatically if mavros 
   # extras
 - arg: { name: "use_waypoint_handler", default: "false" }
 - arg: { name: "initial_wpt_NEDy",     default: "[0.0, 0.0, 0.0, 3.14]" }
 - arg: { name: "use_examples",         default: "false" }
+- arg: { name: "start_rosbag",         default: "false" }
+- arg: { name: "override_from_file",   default: "" }          # "", "path/to/file", "outdoor"
 
 - group:
   - let:                      # overwrite numeric_id as wlan0.hostaddr if unspecified
-      name: "numeric_id"
-      value: "$(command '/bin/bash $(find-pkg-share freyja_configfiles)/scripts/get_hostoctet.sh wlan0')"
-      if: "$(eval ' $(var numeric_id) == -1 and \"$(var use_mavros)\"==\"true\"')"
+      name:   "numeric_id"
+      value:  "$(command '/bin/bash $(find-pkg-share freyja_configfiles)/scripts/get_hostoctet.sh wlan0')"
+      if:     "$(eval ' $(var numeric_id) == -1 and \"$(var use_mavros)\"==\"true\"')"
   - let:                      # overwrite namespace as "R{numeric_id}" if unspecified
-      name: "use_namespace"
-      value: "$(eval 'str(\"R\") + str(max(0,$(var numeric_id)))')"
-      if: "$(eval ' \"$(var use_namespace)\" == \"\" ')"
+      name:   "use_namespace"
+      value:  "$(eval 'str(\"R\") + str(max(0,$(var numeric_id)))')"
+      if:     "$(eval ' \"$(var use_namespace)\" == \"\" ')"
+  - let:
+      name:   "override_from" # load from blank file if no overrides file specified
+      value:  "$(find-pkg-share freyja_configfiles)/launch/empty.yaml"
+      if:     "$(eval ' \"$(var override_from_file)\" == \"\" ')"
+  - let:
+      name:   "override_from" # load from outdoor file if string is 'outdoor'
+      value:  "$(find-pkg-share freyja_configfiles)/launch/outdoor_overrides.yaml"
+      if:     "$(eval ' \"$(var override_from_file)\" == \"outdoor\" ')"
 
   - push-ros-namespace:
       namespace:  "$(var use_namespace)"
@@ -46,6 +56,7 @@ launch:
       - { name:   "filter_type",        value:  "kalman" }
       - { name:   "filter_len",         value:  5 }                     # exposed; has no effect if 'kalman'
       - { name:   "kf_params",          value:  [0.001, 5.0] }
+      - from:     "$(var override_from)"
 
   - node:
       pkg:        "lqg_control"
@@ -61,6 +72,7 @@ launch:
       - { name:   "enable_flatness_ff", value:  "$(var flatness_ff)" }
       - { name:   "flatness_ff_factor", value:  0.7 }
       - { name:   "use_stricter_gains", value:  false }
+      - from:     "$(var override_from)"
 
   - node:
       if:         "$(var use_arbitrator)"
@@ -71,6 +83,7 @@ launch:
       - { name:   "takeoff_land_spd",   value:  0.2 }       # v.speed for takeoff & landing
       - { name:   "await_cmd_after_rc", value:  true }
       - { name:   "use_ap_landing",     value:  false }
+      - from:     "$(var override_from)"
 
   - node:
       if:         "$(var use_waypoint_handler)"
@@ -78,6 +91,7 @@ launch:
       exec:       "waypoint_manager_node"
       param:
       - { name:   "init_NEDy",          value:  "$(var initial_wpt_NEDy)" }
+      - from:     "$(var override_from)"
       remap:
       - { from:   "reference_state",    to:     "target_state" }
 
@@ -87,6 +101,7 @@ launch:
       exec:       "betaflight_sbus_node"
       param:
       - { name:   "sbus_port", value:  "$(var comm_port)" }
+      - from:     "$(var override_from)"
 
   - group:
     - node:
@@ -96,6 +111,7 @@ launch:
         param:
         - { name:   "thrust_scaler",      value:  "$(var thrust_scaler)" }
         - { name:   "use_battery_calib",  value:  false }
+        - from:     "$(var override_from)"
 
     - node:
         namespace:  "mavros"                      # add another sub-namespace under the top
@@ -106,3 +122,9 @@ launch:
         - from:     "$(find-pkg-share freyja_configfiles)/launch/mavros_config_freyja.yaml"
         - { name:   "fcu_url",            value: "$(var comm_port)" }
         - { name:   "tgt_system",         value: "$(var numeric_id)" }
+
+  - executable:
+      if:             "$(var start_rosbag)"
+      cmd:            "/bin/bash $(find-pkg-share freyja_configfiles)/scripts/basic_rosbag_rec.sh $(var use_namespace)"
+      shell:          "true"
+      output:         "screen"
