@@ -41,6 +41,10 @@ launch:
       name:   "override_from_file" # load from outdoor file if string is 'outdoor'
       value:  "$(find-pkg-share freyja_configfiles)/launch/outdoor_overrides.yaml"
       if:     "$(eval ' \"$(var override_from_file)\" == \"outdoor\" ')"
+  - let:
+      name:   "wpmgr_topic_prefix" # topic remap for WP handler if arbitrator is up
+      value:  "$(eval '\"target\" if \"$(var use_arbitrator)\"==\"true\" else \"reference\"')"
+      if:     "$(var use_waypoint_handler)"
 
   - push-ros-namespace:
       namespace:  "$(var use_namespace)"
@@ -66,7 +70,7 @@ launch:
       - { name:   "total_mass",         value:  "$(var total_mass)" }   #0.85
       - { name:   "controller_rate",    value:  50 }
       - { name:   "estimator_rate",     value:  20 }
-      - { name:   "bias_estimator",     value:  "$(var bias_compensation)" }
+      - { name:   "bias_compensation",  value:  "$(var bias_compensation)" }
       - { name:   "apply_est_biases",   value:  true }
       - { name:   "apply_extf_corr",    value:  false }
       - { name:   "enable_flatness_ff", value:  "$(var flatness_ff)" }
@@ -93,7 +97,7 @@ launch:
       - { name:   "init_NEDy",          value:  "$(var initial_wpt_NEDy)" }
       - from:     "$(var override_from_file)"
       remap:
-      - { from:   "reference_state",    to:     "target_state" }
+      - { from:   "reference_state",    to:     "$(var wpmgr_topic_prefix)_state" }
 
   - node:
       if:         "$(eval ' \"$(var autopilot)\" == \"betaflight\" ')"
