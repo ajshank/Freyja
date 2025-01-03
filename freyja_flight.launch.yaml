@@ -34,11 +34,11 @@ launch:
       value:  "$(eval 'str(\"R\") + str(max(0,$(var numeric_id)))')"
       if:     "$(eval ' \"$(var use_namespace)\" == \"\" ')"
   - let:
-      name:   "override_from" # load from blank file if no overrides file specified
+      name:   "override_from_file" # load from blank file if no overrides file specified
       value:  "$(find-pkg-share freyja_configfiles)/launch/empty.yaml"
       if:     "$(eval ' \"$(var override_from_file)\" == \"\" ')"
   - let:
-      name:   "override_from" # load from outdoor file if string is 'outdoor'
+      name:   "override_from_file" # load from outdoor file if string is 'outdoor'
       value:  "$(find-pkg-share freyja_configfiles)/launch/outdoor_overrides.yaml"
       if:     "$(eval ' \"$(var override_from_file)\" == \"outdoor\" ')"
 
@@ -56,7 +56,7 @@ launch:
       - { name:   "filter_type",        value:  "kalman" }
       - { name:   "filter_len",         value:  5 }                     # exposed; has no effect if 'kalman'
       - { name:   "kf_params",          value:  [0.001, 5.0] }
-      - from:     "$(var override_from)"
+      - from:     "$(var override_from_file)"
 
   - node:
       pkg:        "lqg_control"
@@ -72,7 +72,7 @@ launch:
       - { name:   "enable_flatness_ff", value:  "$(var flatness_ff)" }
       - { name:   "flatness_ff_factor", value:  0.7 }
       - { name:   "use_stricter_gains", value:  false }
-      - from:     "$(var override_from)"
+      - from:     "$(var override_from_file)"
 
   - node:
       if:         "$(var use_arbitrator)"
@@ -83,7 +83,7 @@ launch:
       - { name:   "takeoff_land_spd",   value:  0.2 }       # v.speed for takeoff & landing
       - { name:   "await_cmd_after_rc", value:  true }
       - { name:   "use_ap_landing",     value:  false }
-      - from:     "$(var override_from)"
+      - from:     "$(var override_from_file)"
 
   - node:
       if:         "$(var use_waypoint_handler)"
@@ -91,7 +91,7 @@ launch:
       exec:       "waypoint_manager_node"
       param:
       - { name:   "init_NEDy",          value:  "$(var initial_wpt_NEDy)" }
-      - from:     "$(var override_from)"
+      - from:     "$(var override_from_file)"
       remap:
       - { from:   "reference_state",    to:     "target_state" }
 
@@ -101,7 +101,7 @@ launch:
       exec:       "betaflight_sbus_node"
       param:
       - { name:   "sbus_port", value:  "$(var comm_port)" }
-      - from:     "$(var override_from)"
+      - from:     "$(var override_from_file)"
 
   - group:
     - node:
@@ -111,7 +111,7 @@ launch:
         param:
         - { name:   "thrust_scaler",      value:  "$(var thrust_scaler)" }
         - { name:   "use_battery_calib",  value:  false }
-        - from:     "$(var override_from)"
+        - from:     "$(var override_from_file)"
 
     - node:
         namespace:  "mavros"                      # add another sub-namespace under the top
