@@ -1,0 +1,12 @@
+/**:    # note that this affects ALL nodes!
+  ros__parameters:
+    freyja_dummy_parameter:     "yaml-example-only"
+    #### state manager node
+    # state_source:         "apm"
+    # kf_params:            [0.001, 5.0]      # [meas.cov, proc.cov]
+    #### flight mode arbitrator
+    # takeoff_land_spd:     0.2               # m/s
+    # await_cmd_after_rc:   true              # wait for arm-service call even if pilot okays
+
+    
+  

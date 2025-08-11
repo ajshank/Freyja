@@ -16,11 +16,13 @@ ApmModeArbitrator::ApmModeArbitrator() : Node( ROS_NODE_NAME )
   declare_parameter<double>( "arm_takeoff_delay", 4.0 );
   declare_parameter<double>( "mission_wdg_timeout", 1.0 );
   declare_parameter<double>( "hover_wdg_timeout", -1.0 );
-  declare_parameter<bool>( "await_cmd_after_rc", false );
+  declare_parameter<bool>( "await_cmd_after_rc", true );
   declare_parameter<int>( "sys_ready_checks", 3 );
+  declare_parameter<bool>( "use_ap_landing", false );
 
   loadParameters();
   
+  has_conn_ = false;
   e_landing_ = false;
   arm_req_sent_ = false;
   target_state_avail_ = false;
@@ -50,6 +52,7 @@ ApmModeArbitrator::ApmModeArbitrator() : Node( ROS_NODE_NAME )
   manager_mode_pub_ = create_publisher<std_msgs::msg::UInt8> ( "flight_arbitration_mode", 1);                      
 
   arming_client_ = create_client<MavrosArming> ( "mavros/cmd/arming" );
+  landmode_client_ = create_client<MavrosCmdLong> ( "mavros/cmd/command" );
   biasreq_client_ = create_client<BoolServ> ( "set_bias_compensation" );
   extfcorr_client_ = create_client<BoolServ> ( "set_extf_correction" );
   groundidle_client_ = create_client<BoolServ> ( "set_onground_idle" );
@@ -63,7 +66,10 @@ ApmModeArbitrator::ApmModeArbitrator() : Node( ROS_NODE_NAME )
                               rp->success = true;
                             } );
   arbitrator_rate_ = 10.0;   // mode arbitrator runs at this rate, hz
-  manager_timer_ = create_timer( this, get_clock(),
+  manager_timer_ = create_timer( 
+                            #ifdef ROSVER_FOXY_OR_GALAC
+                              this, get_clock(),
+                            #endif
                             std::chrono::duration<float>(1.0/arbitrator_rate_),
                             std::bind(&ApmModeArbitrator::manager, this),
                             timer_cb_group_ );
@@ -81,6 +87,7 @@ void ApmModeArbitrator::loadParameters()
   int sys_ready_checks;
   get_parameter( "sys_ready_checks", sys_ready_checks );
   sysready_chk_flags_ = 0b11111111 & sys_ready_checks;
+  get_parameter( "use_ap_landing", use_ap_landing_ );
 }
 
 /*
@@ -101,13 +108,23 @@ void ApmModeArbitrator::sendMavrosArmCommand( const bool req )
   auto arm_req = std::make_shared<MavrosArming::Request> ();
   arm_req->value = req;
   arming_client_->async_send_request( arm_req );
-  RCLCPP_WARN( get_logger(), "Requesting arming state = %d.", req );
+  RCLCPP_INFO( get_logger(), "Requesting arming state = %d.", req );
+}
+
+void ApmModeArbitrator::sendMavrosLandModeCommand()
+{
+  auto landmode_req = std::make_shared<MavrosCmdLong::Request> ();
+  landmode_req->command = 176;    // enum for MAV_CMD_DO_SET_MODE
+  landmode_req->param1 = 1;       // ardupilot specific (always 1)
+  landmode_req->param2 = 9;       // ardupilot specific (land-mode enum)
+  landmode_client_->async_send_request( landmode_req );
+  RCLCPP_INFO( get_logger(), "Requesting landing mode!" );
 }
 
 void ApmModeArbitrator::eLandingServiceHandler( const Trigger::Request::SharedPtr rq,
                                                 const Trigger::Response::SharedPtr rp )
 {
-  RCLCPP_WARN( get_logger(), "** LAND REQUEST RECV **" );
+  RCLCPP_INFO( get_logger(), "** LAND REQUEST RECV **" );
   mission_mode_ = MissionMode::E_LANDING;
   rp->success = true;
 }
@@ -124,7 +141,7 @@ void ApmModeArbitrator::freyjaStatusCallback( const FreyjaIfaceStatus::ConstShar
   if( skip_initial_msgs < 20 )
   {
     skip_initial_msgs++;
-    RCLCPP_WARN( get_logger(), "Intentionally waiting .." );
+    RCLCPP_INFO( get_logger(), "Intentionally waiting .." );
     return;
   }
 
@@ -139,6 +156,7 @@ void ApmModeArbitrator::freyjaStatusCallback( const FreyjaIfaceStatus::ConstShar
     { //. this begins the state machine arbitration
       mission_mode_ = MissionMode::PENDING_PILOT;
       vehicle_mode_ = VehicleMode::DISARMED_NOCOMP;
+      has_conn_ = true;
     }
   }
   else
@@ -178,6 +196,15 @@ void ApmModeArbitrator::manager()
 
   switch( mission_mode_ )
   {
+    case MissionMode::NOT_INIT :
+      { //. ordinarily we do nothing here, but issue warning if we entered here after
+        //  having connected before: this indicates something is wrong.
+        if( has_conn_ )
+        {
+          RCLCPP_ERROR_THROTTLE(get_logger(), *(get_clock()), 500, "Freyja autopilot link timeout!");
+        }
+
+      }
     case MissionMode::PENDING_PILOT :
       { //. we are not in control at the moment, so keep checking if we are
         RCLCPP_INFO_THROTTLE( get_logger(), *(get_clock()), 2000, "Awaiting Pilot Switch .." );
@@ -247,7 +274,7 @@ void ApmModeArbitrator::manager()
         {
           manager_refstate_.pd -= (takeoff_spd_*1.0/arbitrator_rate_);
           manager_refstate_.vd = -takeoff_spd_;
-          RCLCPP_WARN_THROTTLE( get_logger(), *(get_clock()), 500, "TAKEOFF in-prog: %0.1f/%0.1f", pos_ned_(2), init_hover_pd_ );
+          RCLCPP_INFO_THROTTLE( get_logger(), *(get_clock()), 500, "TAKEOFF in-prog: %0.1f/%0.1f", pos_ned_(2), init_hover_pd_ );
         }
         else
         {
@@ -298,9 +325,20 @@ void ApmModeArbitrator::manager()
           // zero out velocities
           manager_refstate_.vn = manager_refstate_.ve = manager_refstate_.vd = 0.0;
           refstate_pub_->publish( manager_refstate_ );
-          RCLCPP_WARN( get_logger(), " **** FREYJA LANDING! ****\n\tLocking current position .." );
+          
+          if( use_ap_landing_ )
+          { //. if autopilot will land for us, we can end here.
+            sendMavrosLandModeCommand();
+            RCLCPP_WARN( get_logger(), " **** LANDING BY AUTOPILOT! ****\n" );
+            // Trust autopilot to turn the motors off, and then we can stop.
+            // So we can't go to mission end yet.
+          }
+          else
+          {
+            landingInProgress( /*_init=*/true );
+            RCLCPP_WARN( get_logger(), " **** FREYJA LANDING! ****\n\tLocking current position .." );
+          }
           e_landing_ = true;
-          landingInProgress( /*_initialise=*/true );
         }
         
         // push reference state down as long as above arming altitude or reference
@@ -376,6 +414,13 @@ bool ApmModeArbitrator::landingInProgress( bool _init )
   static std::vector<double> n_sec_hist(n_hist, takeoff_spd_);
   static int coeff_idx = 0;
   static double avg_desc_spd = 0.0;
+
+  if( use_ap_landing_ )
+  { //. autopilot landing: return true as long as we're not in a disarmed state,
+    //  since the autopilot will disarm after landing is complete.
+    return ( (vehicle_mode_!=VehicleMode::DISARMED_NOCOMP) &&
+             (vehicle_mode_!=VehicleMode::DISARMED_COMP) );
+  }
 
   if( _init )
   {

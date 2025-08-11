@@ -1,0 +1,16 @@
+/**/state_manager:    # note that this affects ALL nodes!
+  ros__parameters:
+    state_source:           "apm"
+    use_rtkbaseframe:       true
+    rtkbase_offset_type:    "base"
+    # waypoint manager
+    use_waypoint_handler:   true
+    # mavros
+    use_mavros:             true
+    # arbitrator
+    use_arbitrator:         true
+    use_ap_landing:         true
+    await_cmd_after_rc:     true
+    sys_ready_checks:       3         # bitfield: 0b[x x x x x rtk, cstate, connected]
+    
+  

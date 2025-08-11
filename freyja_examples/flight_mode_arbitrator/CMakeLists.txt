@@ -26,6 +26,13 @@ else()
   find_package( mavros_msgs REQUIRED )
   include_directories( include )
 
+  # we need some means to support older ROS2 distros for a while
+  if(DEFINED ENV{ROS_DISTRO})
+    if("$ENV{ROS_DISTRO}" MATCHES "foxy" OR "$ENV{ROS_DISTRO}" MATCHES "galactic")
+        add_compile_options( -DROSVER_FOXY_OR_GALAC )
+    endif()
+  endif()
+
   ## Declare a C++ executable
   add_executable(${PROJECT_NAME}_node src/apm_arbitration.cpp)
   target_include_directories( ${PROJECT_NAME}_node PUBLIC

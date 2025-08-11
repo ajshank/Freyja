@@ -82,7 +82,7 @@ class WaypointManager
 {
   public:
     // common elements for all waypoint styles
-    PosVelNED target_state_;
+    PosVelAccNED target_state_;
     PosVelAccNED3x3 planning_cur_state_;
     WaypointMode::WaypointMode wpt_mode_;
     TerminalBehaviour::TerminalBehaviour term_behav_;
@@ -120,16 +120,16 @@ class WaypointManager
     }
 
     WaypointManager(){ have_waypoint_ = have_plan_ = have_forced_waypoint_ = false; }
-    WaypointManager( const PosVelNED _ts )
+    WaypointManager( const PosVelAccNED _ts )
     {
       target_state_ = _ts;
       have_waypoint_ = true;
       have_plan_ = false;
     }
 
-    inline void setTargetState( const PosVelNED _ts ) { target_state_ = std::move(_ts); }
-    inline void getTargetState( PosVelNED &ts ) { ts = target_state_; }
-    inline void setForcedTargetState( const PosVelNED _ts )
+    inline void setTargetState( const PosVelAccNED _ts ) { target_state_ = std::move(_ts); }
+    inline void getTargetState( PosVelAccNED &ts ) { ts = target_state_; }
+    inline void setForcedTargetState( const PosVelAccNED _ts )
     {
       setTargetState( _ts );
       have_forced_waypoint_ = true;
@@ -147,7 +147,7 @@ class WaypointManager
     }
 
     // interface for the outside world
-    void setWaypointStates( const PosVelAccNED &_cs, const PosVelNED &_ts )
+    void setWaypointStates( const PosVelAccNED &_cs, const PosVelAccNED &_ts )
     {
       setTargetState( _ts );   // set target state as such
       setCurrentState( _cs );  // set current state (will be reshaped a bit differently)
@@ -184,13 +184,15 @@ void WaypointManager::triggerReplanning( double p1, double p2, WaypointMode::Way
             Deltas are shaped as: [px py pz; vx vy vz].
     */ 
     auto targetpos = target_state_.head<3>();
-    auto targetvel = target_state_.tail<3>();
+    auto targetvel = target_state_.block<1,3>(0,3);
+    auto targetacc = target_state_.tail<3>();
     auto currentpos = planning_cur_state_.row(0);
     auto currentvel = planning_cur_state_.row(1);
+    auto currentacc = Eigen::Matrix<double, 1, 3>::Zero();
 
     delta_targets_ << targetpos - currentpos - (traj_alloc_duration_*currentvel),
-                      targetvel - currentvel,
-                      0.0, 0.0, 0.0;
+                      targetvel - currentvel - (traj_alloc_duration_*currentacc),
+                      targetacc - currentacc;
 
     // 2. update timing parameters
     update_planning_coeffs( traj_alloc_duration_ );
@@ -225,7 +227,7 @@ void WaypointManager::triggerReplanning( double p1, double p2, WaypointMode::Way
   if( term_behav_ == TerminalBehaviour::HOVER )
     term_behav_vel_.setZero();
   else if( term_behav_ == TerminalBehaviour::HOLD )
-    term_behav_vel_ = target_state_.tail<3>();
+    term_behav_vel_ = target_state_.block<1,3>(0,3);
   else
     term_behav_vel_.setZero();
 }
@@ -361,8 +363,8 @@ TrajectoryGenerator::TrajectoryGenerator() : rclcpp::Node( rclcpp_NODE_NAME )
   get_parameter( "init_NEDy", init_NEDy_ );
   if( init_NEDy_.size() > 3 && std::none_of( init_NEDy_.cbegin(), init_NEDy_.cend(), [](const double &d){return std::isnan(d);} ) )
   {//. user provided a complete initial waypoint ..
-    PosVelNED initial_wpt;
-    initial_wpt << init_NEDy_[0], init_NEDy_[1], init_NEDy_[2], 0.0, 0.0, 0.0;
+    PosVelAccNED initial_wpt;
+    initial_wpt << init_NEDy_[0], init_NEDy_[1], init_NEDy_[2], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
     WP.setForcedTargetState( initial_wpt );
     yaw_target_ = init_NEDy_[3];
     traj_init_ = true;
@@ -403,10 +405,11 @@ void TrajectoryGenerator::waypointCallback( const WaypointTarget::ConstSharedPtr
   }
 
 
-  // check if the change is big enough to do a replan: target_state_: [1x6]
-  static PosVelNED candidate_target_state, last_target_state;
+  // check if the change is big enough to do a replan: target_state_: [1x9]
+  static PosVelAccNED candidate_target_state, last_target_state;
   candidate_target_state << msg->terminal_pn, msg->terminal_pe, msg->terminal_pd,
-                            msg->terminal_vn, msg->terminal_ve, msg->terminal_vd;
+                            msg->terminal_vn, msg->terminal_ve, msg->terminal_vd,
+                            msg->terminal_an, msg->terminal_ae, msg->terminal_ad;
 
   bool accept_wpt = !traj_init_ ||
                     (candidate_target_state.head<3>() - last_target_state.head<3>()).norm() > k_thresh_skipreplan_;

@@ -116,7 +116,9 @@ class StateManager: public rclcpp::Node
   bool enable_depr_statepub_;
   
   public:
+    bool manager_ready_;
     StateManager();
+
     /* launch-time parameter specifies which one to pick */
     void initPixhawkManager();
     void initTfManager();
