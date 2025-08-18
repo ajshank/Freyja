@@ -123,6 +123,7 @@ void StateManager::mocapCallback( const TFStamped::ConstSharedPtr msg )
 
   /* Copy over and publish right away */
   state_msg.header.stamp = now();
+  named_state_msg.header.stamp = now();
   if( enable_depr_statepub_ )
   {
     for( uint8_t idx = 0; idx < STATE_VECTOR_LEN; idx++ )
