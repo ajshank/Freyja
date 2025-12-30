@@ -15,7 +15,7 @@
 #include <memory>
 
 #include "rclcpp/rclcpp.hpp"
-#include <eigen3/Eigen/Dense>
+#include <Eigen/Dense>
 
 #include "freyja_msgs/msg/current_state_bias_est.hpp"
 

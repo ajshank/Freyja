@@ -15,3 +15,4 @@ namespace freyja_utils
 
 #include "filters/filters.cpp"
 #include "fastmath/fast_approximate_math.cpp"
+#include "stats/approx_stats.cpp"

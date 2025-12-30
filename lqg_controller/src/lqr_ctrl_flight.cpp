@@ -9,12 +9,18 @@
 */
 
 #include "lqr_ctrl_flight.h"
+#include <iomanip>
 
 #define ROS_NODE_NAME "lqg_control"
 #define pi 3.1416
 
+// typedef Eigen::MatrixXd::Zeros(3,3) Zero33;
+// typedef Eigen::MatrixXd::Identity(3,3) Iden33;
+// typedef Eigen::MatrixXd::Identity(4,4) Iden44;
+
 LQRController::LQRController(BiasEstimator &b) : Node( ROS_NODE_NAME ),
-                                                 bias_est_( b )
+                                                 bias_est_( b ),
+                                                 tmpc_solver_(nullptr)
 {
   int controller_rate_default = 30;
   float mass_default = 0.85;
@@ -39,6 +45,7 @@ LQRController::LQRController(BiasEstimator &b) : Node( ROS_NODE_NAME ),
   
   /* initialise system, matrices and controller configuration */
   initLqrSystem();
+  initMPCSystem();
   
   
   /* Associate a subscriber for the current vehicle state */
@@ -70,7 +77,7 @@ LQRController::LQRController(BiasEstimator &b) : Node( ROS_NODE_NAME ),
   /* Timer to run the LQR controller perdiodically */
   float controller_period = 1.0/controller_rate_;
   controller_timer_ = rclcpp::create_timer( this, get_clock(), std::chrono::duration<float>(controller_period),
-                           std::bind( &LQRController::computeFeedback, this ) );
+                           std::bind( &LQRController::computeMPCFeedback, this ) );
   
   /* Checks for correctness */
   STATEFB_MISSING_INTRV_ = 0.5;
@@ -167,6 +174,48 @@ void LQRController::initLqrSystem()
     RCLCPP_ERROR( get_logger(), "LQR: Controller type unknown!" );
 }
 
+void LQRController::initMPCSystem()
+{
+//   TinySolver* ts;
+//   tmpc_solver_ = ts;
+//   tmpc_nstates_ = 7;
+//   tmpc_nctrls_ = 4;
+//   tmpc_horiz_ = 50;
+  tmpc_solver_ = new TinySolver;
+  Eigen::Matrix<double, tmpc_nstates_, tmpc_nstates_> Adyn;
+  Eigen::Matrix<double, tmpc_nstates_, tmpc_nctrls_> Bdyn;
+  Eigen::Matrix<double, tmpc_nstates_, 1> Q;
+  Eigen::Matrix<double, tmpc_nctrls_, 1> R;
+  Adyn = Eigen::MatrixXd::Identity(7, 7);
+  double dt = 1/50.0;
+  Adyn.topLeftCorner<6,6>().topRightCorner<3,3>().diagonal().setConstant(dt);
+  Bdyn.setZero();
+  Bdyn.bottomRightCorner<4,4>().diagonal().setConstant(dt);
+  
+  Q << 10, 10, 30., 5., 5., 1., 2.0;
+  R << 0.1, 0.1, 0.1, 0.1;
+  
+  double rho_value = 15.0;
+  
+//   tinyMatrix Adyn = Map<Matrix<tinytype, tmpc_nstates_, tmpc_nstates_, RowMajor>>(Adyn_data);
+//   tinyMatrix Bdyn = Map<Matrix<tinytype, tmpc_nstates_, tmpc_nctrls_, RowMajor>>(Bdyn_data);
+//   tinyVector Q = Map<Matrix<tinytype, tmpc_nstates_, 1>>(Q_data);
+//   tinyVector R = Map<Matrix<tinytype, tmpc_nctrls_, 1>>(R_data);
+  
+  tinyMatrix x_min = Eigen::Matrix<double, tmpc_nstates_, tmpc_horiz_>::Constant(-5);
+  tinyMatrix x_max = Eigen::Matrix<double, tmpc_nstates_, tmpc_horiz_>::Constant(5);
+  tinyMatrix u_min = Eigen::Matrix<double, tmpc_nctrls_, tmpc_horiz_-1>::Constant(-5.0);
+  tinyMatrix u_max = Eigen::Matrix<double, tmpc_nctrls_, tmpc_horiz_-1>::Constant(5.0);
+  
+  int status = tiny_setup(&tmpc_solver_,
+                          Adyn, Bdyn, Q.asDiagonal(), R.asDiagonal(),
+                          rho_value, tmpc_nstates_, tmpc_nctrls_, tmpc_horiz_,
+                          x_min, x_max, u_min, u_max, 1);
+  
+  // Update whichever settings we'd like
+  tmpc_solver_->settings->max_iter = 100;
+  tmpc_solver_->settings->check_termination = 2;
+}
 void LQRController::biasEnableServer( const BoolServ::Request::SharedPtr rq,
                                       const BoolServ::Response::SharedPtr rp )
 {
@@ -209,8 +258,8 @@ constexpr double LQRController::calcYawError( const double &a, const double &b )
 void LQRController::stateCallback( const CurrentState::ConstSharedPtr msg )
 {
   /* Parse message to obtain state and reduced state information */
-  static Eigen::Matrix<double, 7, 1> current_state;
-  static Eigen::Matrix<double, 7, 1> state_err;
+  //static Eigen::Matrix<double, 7, 1> current_state;
+  //static Eigen::Matrix<double, 7, 1> state_err;
 
   float yaw = msg->state_vector[8];
   rot_yaw_ << std::cos(yaw), std::sin(yaw), 0,
@@ -218,25 +267,11 @@ void LQRController::stateCallback( const CurrentState::ConstSharedPtr msg )
               0, 0, 1;
              
   /* state is the first 6 elements, and yaw */
-  current_state << Eigen::Map<const PosVelNED>( msg->state_vector.data() ),
+  current_state_ << Eigen::Map<const PosVelNED>( msg->state_vector.data() ),
                    double(yaw);
-
-  /* set measurement for bias estimator */
-  if( bias_compensation_req_ )
-    bias_est_.setMeasurement( current_state.head<6>() );
+  have_state_update_ = true;
   
-  /* compute x - xr right here */
-  std::unique_lock<std::mutex> rsmtx( reference_state_mutex_, std::defer_lock );
-  if( have_reference_update_ )
-  {
-    rsmtx.lock();
-    state_err.head<6>() = current_state.head<6>() - reference_state_.head<6>();
-    /* yaw-error is done differently */
-    state_err(6) = calcYawError( current_state(6), reference_state_(6) );
-    rsmtx.unlock();
-    reduced_state_ = std::move( state_err );
-    have_state_update_ = true;
-  }
+ 
   
   last_state_update_t_ = now();
 }
@@ -263,6 +298,18 @@ void LQRController::externalForceCallback( const GeomVec3Stamped::ConstSharedPtr
   f_ext_ << msg->vector.x, msg->vector.y, msg->vector.z;
 }
 
+void LQRController::invert_dynamics(const Vector4d& c, double &r, double &p, double &yr, double &T)
+{
+  /* Thrust */
+  T = total_mass_ * c.head<3>().norm();
+  
+  /* Roll, pitch and yawrate */
+  Eigen::Matrix<double, 3, 1> Z = rot_yaw_ * c.head<3>() * (-total_mass_/T);
+  r = std::asin( -Z(1) );
+  p = std::atan( Z(0)/Z(2) );
+  yr = c(3);
+}
+
 __attribute__((optimize("unroll-loops")))
 void LQRController::computeFeedback( )
 {
@@ -270,7 +317,7 @@ void LQRController::computeFeedback( )
   if( !have_state_update_ )
     return;
   
-  float roll, pitch, yaw;
+  double roll, pitch, yaw;
   double T;
   static Eigen::Matrix<double, 4, 1> control_input;
   static Eigen::Matrix<double, 7, 1> state_err;
@@ -309,14 +356,7 @@ void LQRController::computeFeedback( )
     /* Correct for external forces */
     control_input.head<3>() -= (apply_extf_corr_ * f_ext_.head<3>() );
   
-    /* Thrust */
-    T = total_mass_ * control_input.head<3>().norm();
-  
-    /* Roll, pitch and yawrate */
-    Eigen::Matrix<double, 3, 1> Z = rot_yaw_ * control_input.head<3>() * (-total_mass_/T);
-    roll = std::asin( -Z(1) );
-    pitch = std::atan( Z(0)/Z(2) );
-    yaw = control_input(3);
+    invert_dynamics(control_input, roll, pitch, yaw, T);
   }
   
   /* Actual commanded input */
@@ -355,6 +395,84 @@ void LQRController::computeFeedback( )
                     (debug_msg.MASS_CR * enable_dyn_mass_correction_ ) |
                     (debug_msg.FLAT_FF * enable_flatness_ff_ ) |
                     (debug_msg.CTRL_OK * state_valid );
+  controller_debug_pub_ -> publish( debug_msg ); 
+}
+
+void LQRController::computeMPCFeedback()
+{
+  static Eigen::Matrix<double, 7, 1> state_err;
+  static Eigen::Matrix<double, 4, 1> control_input;
+  static Eigen::Matrix<double, tmpc_nstates_, tmpc_horiz_> xref;
+  
+  static double roll, pitch, yaw, T;
+  
+  if( !have_reference_update_ || !have_state_update_ )
+    return;
+
+  TinyWorkspace* solver_ws = tmpc_solver_->work;
+  
+  //state_err = std::move(reduced_state_);
+  tiny_set_x0(tmpc_solver_, current_state_);
+  
+  // 2. Update reference
+  tiny_set_x_ref(tmpc_solver_, reference_state_.head<tmpc_nstates_>().replicate<1, tmpc_horiz_>());
+  
+  // 3. Reset dual variables if needed
+  solver_ws->y = Eigen::Matrix<double, tmpc_nctrls_, tmpc_horiz_-1>::Zero();
+  solver_ws->g = Eigen::Matrix<double, tmpc_nstates_, tmpc_horiz_>::Zero();
+  
+  // 4. Solve MPC problem
+  auto t1 = std::chrono::high_resolution_clock::now();
+  int solver_ret = tiny_solve(tmpc_solver_);
+  
+  int sol_status  = tmpc_solver_->solution->solved;
+  bool state_valid = (bool)sol_status;
+  // 5. Simulate forward
+  control_input = tmpc_solver_->solution->u.col(0);
+  control_input(2) = std::min( control_input(2), 8.0 );
+  control_input(2) -= 9.81;
+  invert_dynamics(control_input, roll, pitch, yaw, T);
+  auto t2 = std::chrono::high_resolution_clock::now();
+  int elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(t2-t1).count();
+  
+  std::ostringstream s;
+  s << std::setprecision(2) << std::setw(4) << std::fixed;
+  //s << "xc: " << tmpc_solver_->work->x.col(0).transpose() << "\n";
+  //s << "xr: " << tmpc_solver_->work->Xref.col(0).transpose() << "\n";
+  //s << "u:  " << tmpc_solver_->work->u.col(0).transpose() << "\n";
+  s << "solver: iters (sol/work) = " << tmpc_solver_->solution->iter << "/" << tmpc_solver_->work->iter << "\n";
+  s << "solver: status (sol/work) = " << sol_status << "/" << tmpc_solver_->work->status << ", ret: " << solver_ret;
+  s << "elapsed (us) = " << elapsed_us;
+  RCLCPP_INFO_THROTTLE(get_logger(), *(get_clock()), 250, "\n%s", s.str().c_str());
+
+  
+  /* Actual commanded input */
+  RPYT_Command ctrl_cmd;
+  ctrl_cmd.header.stamp = now();
+  ctrl_cmd.roll = roll;
+  ctrl_cmd.pitch = pitch;
+  ctrl_cmd.yaw = yaw;
+  ctrl_cmd.thrust = T;
+  ctrl_cmd.ctrl_mode = 0b00001111;
+  atti_cmd_pub_ -> publish( ctrl_cmd );
+  
+  
+  static CTRL_Debug debug_msg;
+  debug_msg.header.stamp = now();
+  for( uint8_t idx=0; idx<4; idx++ )
+    debug_msg.lqr_u[idx] = static_cast<float>(control_input.coeff(idx));
+  for( uint8_t idx=0; idx<3; idx++ )
+    debug_msg.biasv[idx] = static_cast<float>(f_biases_.coeff(idx));
+  for( uint8_t idx=0; idx<3; idx++ )
+    debug_msg.ext_f[idx] = static_cast<float>(f_ext_.coeff(idx));
+  for( uint8_t idx=0; idx<7; idx++ )
+    debug_msg.errv[idx] = static_cast<float>(state_err.coeff(idx));
+  
+  debug_msg.flags = (debug_msg.EXTF_CR * apply_extf_corr_) |
+  (debug_msg.BIAS_EN * bias_compensation_req_) |
+  (debug_msg.MASS_CR * enable_dyn_mass_correction_ ) |
+  (debug_msg.FLAT_FF * enable_flatness_ff_ ) |
+  (debug_msg.CTRL_OK * state_valid );
   controller_debug_pub_ -> publish( debug_msg ); 
 }
 

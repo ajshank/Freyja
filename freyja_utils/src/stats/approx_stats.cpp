@@ -1,0 +1,4 @@
+namespace freyja_utils
+{
+  
+}

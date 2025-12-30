@@ -26,7 +26,7 @@
 #include <freyja_msgs/msg/controller_debug.hpp>
 #include <freyja_msgs/msg/reference_state.hpp>
 
-#include <eigen3/Eigen/Dense>
+#include <Eigen/Dense>
 
 #include "bias_estimator.h"
 

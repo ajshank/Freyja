@@ -26,9 +26,12 @@
 #include <freyja_msgs/msg/controller_debug.hpp>
 #include <freyja_msgs/msg/reference_state.hpp>
 
-#include <eigen3/Eigen/Dense>
+#include <Eigen/Dense>
 
 #include "bias_estimator.h"
+
+#include "tinympc/tiny_api.hpp"
+#include "tinympc/types.hpp"
 
 typedef freyja_msgs::msg::ReferenceState      TrajRef;
 typedef freyja_msgs::msg::CurrentState        CurrentState;
@@ -43,9 +46,14 @@ typedef Eigen::Matrix<double, 4, 1> Vector4d;
 using std::placeholders::_1;
 using std::placeholders::_2;
 
+const int tmpc_nstates_ = 7;
+const int tmpc_nctrls_ = 4;
+const int tmpc_horiz_ = 25;
+
 class LQRController : public rclcpp::Node
 {
   CurrentState state_vector_;
+  Eigen::Matrix<double, 7, 1> current_state_;
   Eigen::Matrix<double, 7, 1> reduced_state_;
   
   /* Reference state vector */
@@ -93,9 +101,15 @@ class LQRController : public rclcpp::Node
   bool enable_dyn_mass_correction_;
   bool enable_dyn_mass_estimation_;
   
+  //std::shared_ptr<TinySolver> tmpc_solver_;
+  TinySolver *tmpc_solver_;
+  
+  
   public:
     LQRController( BiasEstimator & );
+    ~LQRController() { delete tmpc_solver_; }
     void initLqrSystem();
+    void initMPCSystem();
     
     rclcpp::Subscription<CurrentState>::SharedPtr state_sub_;
     void stateCallback( const CurrentState::ConstSharedPtr ) __attribute__((hot));
@@ -113,6 +127,7 @@ class LQRController : public rclcpp::Node
     
     rclcpp::TimerBase::SharedPtr controller_timer_;
     void computeFeedback( ) __attribute__((optimize("unroll-loops")));
+    void computeMPCFeedback( ) __attribute__((optimize("unroll-loops")));
     
     rclcpp::Subscription<TrajRef>::SharedPtr reference_sub_;
     void trajectoryReferenceCallback( const TrajRef::ConstSharedPtr );
@@ -122,6 +137,8 @@ class LQRController : public rclcpp::Node
 
     /* helper function to calculate yaw error */
     static constexpr inline double calcYawError( const double&, const double& ) __attribute__((always_inline));
+    
+    inline void invert_dynamics(const Vector4d&, double&, double&, double&, double&);
     
     /* estimate actual mass in flight */
     void estimateMass( const Eigen::Matrix<double, 4, 1> &, rclcpp::Time & );
